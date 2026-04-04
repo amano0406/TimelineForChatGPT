@@ -1,0 +1,15 @@
+bin/
+obj/
+.vs/
+.vscode/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+*.zip
+
+web/bin/
+web/obj/
+worker/.venv/
+
+artifacts/

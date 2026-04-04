@@ -1,0 +1,21 @@
+{
+  "allowedExtensions": [
+    ".zip"
+  ],
+  "inputRoots": [
+    {
+      "id": "uploads",
+      "displayName": "Uploads",
+      "path": "/shared/uploads",
+      "enabled": true
+    }
+  ],
+  "outputRoots": [
+    {
+      "id": "runs",
+      "displayName": "Runs",
+      "path": "/shared/outputs",
+      "enabled": true
+    }
+  ]
+}
