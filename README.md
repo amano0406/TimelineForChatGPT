@@ -15,6 +15,8 @@ Local-first tool that turns ChatGPT export ZIP files into timeline-oriented outp
   - `export_summary.json`
   - `conversation_index.jsonl`
   - `conversations/<id>/timeline.md`
+  - `conversations/<id>/events.jsonl`
+  - `conversations/<id>/segments.json`
   - `llm/conversation_index.jsonl`
   - `llm/conversation_corpus-YYYY-MM.jsonl`
   - `job-....zip`
@@ -25,6 +27,7 @@ Local-first tool that turns ChatGPT export ZIP files into timeline-oriented outp
 - chunked upload is not implemented yet
 - extracted directory input is not implemented yet
 - timeline rendering is still a best-effort scaffold parser
+- normalized events and segments are still evolving toward the shared timeline contract
 - older ChatGPT export downloads can be corrupted; the scaffold now rejects ZIP files that cannot be opened cleanly
 
 ## Local development
@@ -62,6 +65,24 @@ Bash / WSL:
 More detail:
 
 - [docs/E2E.md](docs/E2E.md)
+
+## Relationship to `video2timeline`
+
+This repo is intentionally close to `video2timeline`, but it is not a fork of the video worker.
+
+- shared direction:
+  - job flow
+  - run directory contract
+  - timeline-oriented outputs
+  - local-first Docker Compose shape
+- source-specific direction:
+  - `video2timeline` parses media
+  - `chatgpt2timeline` parses ChatGPT export graphs
+
+Reference docs:
+
+- [docs/COMMON_OUTPUT_CONTRACT.md](docs/COMMON_OUTPUT_CONTRACT.md)
+- [docs/NORMALIZED_EVENT_ALIGNMENT.md](docs/NORMALIZED_EVENT_ALIGNMENT.md)
 
 ## Sample validation note
 

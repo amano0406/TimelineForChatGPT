@@ -112,6 +112,8 @@ def normalize_export(
         normalized = normalize_conversation(conversation, request)
         summary = normalized["summary"]
         messages = normalized["messages"]
+        events = normalized["events"]
+        segments = normalized["segments"]
         total_messages += summary["message_count_total"]
         role_counts.update(normalized["role_counts"])
         content_type_counts.update(normalized["content_type_counts"])
@@ -144,8 +146,8 @@ def normalize_export(
         conversation_dir = ensure_dir(conversations_root / summary["conversation_id"])
         write_json(conversation_dir / "conversation.json", conversation)
         write_jsonl(conversation_dir / "messages.jsonl", messages)
-        write_jsonl(conversation_dir / "events.jsonl", messages)
-        write_json(conversation_dir / "segments.json", {"items": messages})
+        write_jsonl(conversation_dir / "events.jsonl", events)
+        write_json(conversation_dir / "segments.json", {"items": segments})
         (conversation_dir / "timeline.md").write_text(normalized["timeline_markdown"], encoding="utf-8")
         write_json(conversation_dir / "attachments.json", {"items": normalized["asset_refs"]})
 
@@ -261,6 +263,8 @@ def normalize_conversation(conversation: dict[str, Any], request: JobRequest) ->
             }
         )
 
+    events = build_events(conversation_id, messages)
+    segments = build_segments(conversation_id, events)
     started_at_utc, ended_at_utc = message_time_bounds(messages)
     summary = {
         "conversation_id": conversation_id,
@@ -277,6 +281,8 @@ def normalize_conversation(conversation: dict[str, Any], request: JobRequest) ->
         "image_count": sum(1 for ref in asset_refs if ref.get("kind") == "image"),
         "audio_count": sum(1 for ref in asset_refs if ref.get("kind") == "audio"),
         "tool_count": role_counts.get("tool", 0),
+        "event_count": len(events),
+        "segment_count": len(segments),
         "has_tool_messages": role_counts.get("tool", 0) > 0,
         "has_system_messages": role_counts.get("system", 0) > 0,
         "has_attachments": len(asset_refs) > 0,
@@ -289,10 +295,12 @@ def normalize_conversation(conversation: dict[str, Any], request: JobRequest) ->
         "timeline_path": f"conversations/{conversation_id}/timeline.md",
     }
 
-    timeline_markdown = render_timeline_markdown(summary, messages)
+    timeline_markdown = render_timeline_markdown(summary, events, segments)
     return {
         "summary": summary,
         "messages": messages,
+        "events": events,
+        "segments": segments,
         "asset_refs": asset_refs,
         "role_counts": dict(role_counts),
         "content_type_counts": dict(content_type_counts),
@@ -419,7 +427,156 @@ def asset_kind(payload: dict[str, Any]) -> str:
     return "attachment"
 
 
-def render_timeline_markdown(summary: dict[str, Any], messages: list[dict[str, Any]]) -> str:
+def build_events(conversation_id: str, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for sequence, message in enumerate(messages, start=1):
+        event_id = str(message.get("message_id") or f"event-{sequence:04d}")
+        artifacts = list(message.get("asset_refs") or [])
+        events.append(
+            {
+                "source_type": "chatgpt_export",
+                "source_unit_id": conversation_id,
+                "event_id": event_id,
+                "sequence": sequence,
+                "start_at_utc": message.get("created_at"),
+                "end_at_utc": message.get("created_at"),
+                "actor": message.get("role") or "unknown",
+                "kind": infer_event_kind(message),
+                "text": message.get("text") or "",
+                "artifacts": artifacts,
+                "payload": {
+                    "message_id": message.get("message_id"),
+                    "parent_message_id": message.get("parent_message_id"),
+                    "content_type": message.get("content_type"),
+                    "model_slug": message.get("model_slug"),
+                    "asset_count": len(artifacts),
+                },
+            }
+        )
+    return events
+
+
+def infer_event_kind(message: dict[str, Any]) -> str:
+    role = str(message.get("role") or "unknown")
+    if role == "tool":
+        return "tool_result"
+    return "message"
+
+
+def build_segments(conversation_id: str, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not events:
+        return []
+
+    groups: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    for event in events:
+        if not current or not should_start_new_segment(current, event):
+            current.append(event)
+            continue
+        groups.append(current)
+        current = [event]
+
+    if current:
+        groups.append(current)
+
+    segments: list[dict[str, Any]] = []
+    for index, group in enumerate(groups, start=1):
+        actor_counts = Counter(str(event.get("actor") or "unknown") for event in group)
+        kind_counts = Counter(str(event.get("kind") or "unknown") for event in group)
+        artifact_count = sum(len(event.get("artifacts") or []) for event in group)
+        segments.append(
+            {
+                "segment_id": f"segment-{index:04d}",
+                "source_type": "chatgpt_export",
+                "source_unit_id": conversation_id,
+                "sequence": index,
+                "start_at_utc": group[0].get("start_at_utc"),
+                "end_at_utc": group[-1].get("end_at_utc"),
+                "title": build_segment_title(group, index),
+                "summary": build_segment_summary(group, actor_counts, artifact_count),
+                "event_ids": [str(event["event_id"]) for event in group],
+                "actor_counts": dict(actor_counts),
+                "kind_counts": dict(kind_counts),
+                "payload": {
+                    "event_count": len(group),
+                    "artifact_count": artifact_count,
+                },
+            }
+        )
+
+    return segments
+
+
+def should_start_new_segment(current_segment: list[dict[str, Any]], next_event: dict[str, Any]) -> bool:
+    previous = current_segment[-1]
+    if event_gap_seconds(previous, next_event) > 900:
+        return True
+    return str(next_event.get("actor") or "unknown") == "user"
+
+
+def event_gap_seconds(left: dict[str, Any], right: dict[str, Any]) -> float:
+    left_time = parse_datetime(left.get("end_at_utc") or left.get("start_at_utc"))
+    right_time = parse_datetime(right.get("start_at_utc") or right.get("end_at_utc"))
+    if left_time is None or right_time is None:
+        return 0.0
+    return max(0.0, (right_time - left_time).total_seconds())
+
+
+def build_segment_title(events: list[dict[str, Any]], index: int) -> str:
+    preferred = next((event for event in events if event.get("actor") == "user"), events[0])
+    preview = summarize_text(preferred.get("text"), 72)
+    if preview:
+        return preview
+    actor = str(preferred.get("actor") or "unknown")
+    return f"{actor} segment {index}"
+
+
+def build_segment_summary(
+    events: list[dict[str, Any]],
+    actor_counts: Counter[str],
+    artifact_count: int,
+) -> str:
+    actor_flow = " -> ".join(unique_actor_flow(events))
+    parts = [
+        f"{len(events)} event{'s' if len(events) != 1 else ''}",
+        actor_flow if actor_flow else "unknown flow",
+    ]
+    if artifact_count:
+        parts.append(f"{artifact_count} asset{'s' if artifact_count != 1 else ''}")
+    return ", ".join(parts)
+
+
+def unique_actor_flow(events: list[dict[str, Any]]) -> list[str]:
+    flow: list[str] = []
+    for event in events:
+        actor = str(event.get("actor") or "unknown")
+        if not flow or flow[-1] != actor:
+            flow.append(actor)
+    return flow
+
+
+def summarize_text(value: Any, limit: int) -> str:
+    text = reflow_text(value)
+    if not text:
+        return ""
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def reflow_text(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return " ".join(text.split())
+
+
+def render_timeline_markdown(
+    summary: dict[str, Any],
+    events: list[dict[str, Any]],
+    segments: list[dict[str, Any]],
+) -> str:
+    event_lookup = {str(event["event_id"]): event for event in events}
     flags: list[str] = []
     if summary.get("has_tool_messages"):
         flags.append("tool")
@@ -442,6 +599,8 @@ def render_timeline_markdown(summary: dict[str, Any], messages: list[dict[str, A
         f"- Ended (main branch): `{summary.get('ended_at_utc') or '-'}`",
         f"- Default model: `{summary.get('default_model_slug') or '-'}`",
         f"- Messages: `{summary.get('main_branch_message_count', 0)}` main branch / `{summary.get('message_count_total', 0)}` total",
+        f"- Events: `{summary.get('event_count', len(events))}`",
+        f"- Segments: `{summary.get('segment_count', len(segments))}`",
         f"- Branches: `{summary.get('branch_count', 0)}`",
         f"- Assets: `{summary.get('attachment_count', 0)}` attachments / `{summary.get('image_count', 0)}` images / `{summary.get('audio_count', 0)}` audio",
         f"- Tool messages: `{summary.get('tool_count', 0)}`",
@@ -450,21 +609,43 @@ def render_timeline_markdown(summary: dict[str, Any], messages: list[dict[str, A
         f"- Main branch content types: `{format_counter(summary.get('main_branch_content_type_counts'))}`",
         "",
     ]
-    for message in messages:
-        lines.append(f"## {message.get('created_at') or '-'}")
-        lines.append(f"Role: {message['role']}")
-        if message.get("model_slug"):
-            lines.append(f"Model: `{message['model_slug']}`")
+    for segment in segments:
+        lines.append(f"## {format_segment_window(segment)}")
+        lines.append(f"Segment: {segment.get('title') or '-'}")
+        lines.append(f"Summary: {segment.get('summary') or '-'}")
         lines.append("")
-        lines.append(message.get("text") or "")
-        if message.get("asset_refs"):
+        for event_id in segment.get("event_ids", []):
+            event = event_lookup.get(str(event_id))
+            if event is None:
+                continue
+            lines.append(
+                f"### {event.get('actor') or 'unknown'}"
+                f" ({event.get('kind') or 'event'})"
+            )
+            payload = event.get("payload") or {}
+            if payload.get("model_slug"):
+                lines.append(f"Model: `{payload['model_slug']}`")
+            if payload.get("content_type"):
+                lines.append(f"Content type: `{payload['content_type']}`")
+            lines.append(f"Timestamp: `{event.get('start_at_utc') or '-'}`")
             lines.append("")
-            lines.append("Assets:")
-            for ref in message["asset_refs"]:
-                label = ref.get("logical_path") or ref.get("attachment_id") or "(unknown)"
-                lines.append(f"- {ref.get('kind', 'attachment')}: `{label}`")
-        lines.append("")
+            lines.append(event.get("text") or "")
+            if event.get("artifacts"):
+                lines.append("")
+                lines.append("Assets:")
+                for ref in event["artifacts"]:
+                    label = ref.get("logical_path") or ref.get("attachment_id") or "(unknown)"
+                    lines.append(f"- {ref.get('kind', 'attachment')}: `{label}`")
+            lines.append("")
     return "\n".join(lines).strip() + "\n"
+
+
+def format_segment_window(segment: dict[str, Any]) -> str:
+    start = str(segment.get("start_at_utc") or "-")
+    end = str(segment.get("end_at_utc") or "")
+    if not end or end == start:
+        return start
+    return f"{start} - {end}"
 
 
 def build_llm_pack(llm_root: Path, conversation_rows: list[dict[str, Any]], conversations_root: Path) -> int:
@@ -535,6 +716,15 @@ def build_archive(run_dir: Path, job_id: str, conversation_rows: list[dict[str, 
         used_names: set[str] = set()
         for row in conversation_rows:
             timeline_path = run_dir / row["timeline_path"]
+            conversation_root = run_dir / "conversations" / row["conversation_id"]
+            if conversation_root.exists():
+                for candidate in sorted(conversation_root.rglob("*")):
+                    if candidate.is_file():
+                        archive.write(
+                            candidate,
+                            "conversations/"
+                            f"{row['conversation_id']}/{candidate.relative_to(conversation_root).as_posix()}",
+                        )
             if timeline_path.exists():
                 file_name = unique_timeline_export_name(row, used_names)
                 archive.write(timeline_path, f"timelines/{file_name}")

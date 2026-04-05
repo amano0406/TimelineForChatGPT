@@ -7,7 +7,7 @@
 3. open `/jobs/new`
 4. submit a real multipart ZIP upload through the actual Razor Pages form
 5. run the Python worker once
-6. verify a successful run and a corrupted ZIP failure
+6. verify a successful run, including structured event outputs, and a corrupted ZIP failure
 7. verify English and Japanese UI labels on `/jobs`, `/jobs/{id}`, and `/jobs/{id}/conversations/{conversationId}`
 
 ## Entry Points

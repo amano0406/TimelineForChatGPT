@@ -294,6 +294,31 @@ function Assert-GoodRun {
     Assert-True (Test-Path -LiteralPath (Join-Path $runDir "$JobId.zip")) "Missing archive ZIP"
 
     $conversationId = Get-FirstConversationId -RunDir $runDir
+    $conversationDir = Join-Path $runDir ("conversations\" + $conversationId)
+    $eventsPath = Join-Path $conversationDir "events.jsonl"
+    $segmentsPath = Join-Path $conversationDir "segments.json"
+    Assert-True (Test-Path -LiteralPath $eventsPath) "Missing conversation events.jsonl"
+    Assert-True (Test-Path -LiteralPath $segmentsPath) "Missing conversation segments.json"
+
+    $firstEventLine = Get-Content -LiteralPath $eventsPath -Encoding UTF8 -TotalCount 1
+    Assert-Contains -Text $firstEventLine -Needle '"source_type": "chatgpt_export"' -Message "Event output is not using the normalized envelope."
+
+    $segments = Get-JsonObject -Path $segmentsPath
+    Assert-True ($segments.items.Count -ge 1) "Segments file is empty."
+    Assert-True ($segments.items[0].event_ids.Count -ge 1) "First segment has no event ids."
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archivePath = Join-Path $runDir "$JobId.zip"
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($archivePath)
+    try {
+        $entryNames = @($archive.Entries | ForEach-Object { $_.FullName })
+        Assert-True ($entryNames -contains "conversation_index.jsonl") "Archive is missing conversation_index.jsonl"
+        Assert-True ($entryNames -contains "conversations/$conversationId/events.jsonl") "Archive is missing structured conversation events."
+        Assert-True ($entryNames -contains "conversations/$conversationId/segments.json") "Archive is missing structured conversation segments."
+    }
+    finally {
+        $archive.Dispose()
+    }
 
     $jobsEn = Join-Path $ArtifactRoot "jobs-en.html"
     $jobsJa = Join-Path $ArtifactRoot "jobs-ja.html"
