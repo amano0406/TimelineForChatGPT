@@ -12,11 +12,17 @@ Local-first tool that turns ChatGPT export ZIP files into timeline-oriented outp
   - `/jobs`
   - `/jobs/{id}`
 - worker output:
+  - `request.json`
+  - `status.json`
+  - `result.json`
+  - `manifest.json`
   - `export_summary.json`
   - `conversation_index.jsonl`
   - `conversations/<id>/timeline.md`
   - `conversations/<id>/events.jsonl`
   - `conversations/<id>/segments.json`
+  - `conversations/<id>/messages.jsonl`
+  - `conversations/<id>/attachments.json`
   - `llm/conversation_index.jsonl`
   - `llm/conversation_corpus-YYYY-MM.jsonl`
   - `job-....zip`
@@ -65,6 +71,20 @@ Bash / WSL:
 More detail:
 
 - [docs/E2E.md](docs/E2E.md)
+
+## Validation
+
+Worker unit tests:
+
+```bash
+PYTHONPATH=/mnt/c/apps/chatgpt2timeline/worker/src python3 -m unittest discover -s /mnt/c/apps/chatgpt2timeline/worker/tests -v
+```
+
+Smoke E2E:
+
+```bash
+/mnt/c/apps/chatgpt2timeline/tools/e2e/run-smoke.sh
+```
 
 ## Relationship to `video2timeline`
 
