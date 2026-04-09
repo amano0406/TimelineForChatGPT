@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace ChatGpt2Timeline.Web.Models;
+namespace TimelineForChatGPT.Web.Models;
 
 public sealed class RootOption
 {

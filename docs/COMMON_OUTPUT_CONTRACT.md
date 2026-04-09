@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`chatgpt2timeline` is intentionally shaped to stay close to `video2timeline`.
+`TimelineForChatGPT` is intentionally shaped to stay close to `video2timeline`.
 
 The immediate goal is not a single shared repo.
 The immediate goal is a shared contract so that:
@@ -19,7 +19,7 @@ Shared output contract comes before shared implementation.
 That means:
 
 - `video2timeline` remains the video-focused tool
-- `chatgpt2timeline` remains the ChatGPT export-focused tool
+- `TimelineForChatGPT` remains the ChatGPT export-focused tool
 - both tools should converge on run layout, status semantics, and deliverable naming where practical
 
 ## Shared Run Shape
@@ -34,7 +34,7 @@ Both tools should keep the same top-level run model:
 Current naming differs slightly:
 
 - `video2timeline` uses `run-*`
-- `chatgpt2timeline` currently uses `job-*`
+- `TimelineForChatGPT` currently uses `job-*`
 
 That difference is acceptable for now.
 The important part is the internal file contract.
@@ -62,7 +62,7 @@ Source-specific extension fields:
   - `compute_mode`
   - `processing_quality`
   - `token_enabled`
-- `chatgpt2timeline`
+- `TimelineForChatGPT`
   - `parser_options`
 
 Rule:
@@ -93,7 +93,7 @@ Source-specific progress counters:
   - `videos_skipped`
   - `videos_failed`
   - `current_media`
-- `chatgpt2timeline`
+- `TimelineForChatGPT`
   - `conversations_total`
   - `conversations_done`
   - `conversations_skipped`
@@ -125,7 +125,7 @@ Current tool-specific index pointers:
 
 - `video2timeline`
   - `timeline_index_path`
-- `chatgpt2timeline`
+- `TimelineForChatGPT`
   - `conversation_index_path`
   - `archive_path`
 
@@ -140,7 +140,7 @@ Rule:
 Item granularity differs:
 
 - `video2timeline`: one item per media input
-- `chatgpt2timeline`: one item per conversation
+- `TimelineForChatGPT`: one item per conversation
 
 Even with different granularity, the role is the same:
 
@@ -156,7 +156,7 @@ These deliverables should stay conceptually aligned even if field names differ.
 ### Human-readable timeline
 
 - `video2timeline`: media-centered `timeline.md`
-- `chatgpt2timeline`: conversation-centered `timeline.md`
+- `TimelineForChatGPT`: conversation-centered `timeline.md`
 
 Both should optimize for:
 
@@ -167,7 +167,7 @@ Both should optimize for:
 ### Structured event output
 
 - `video2timeline`: transcript and screen-derived records
-- `chatgpt2timeline`: branch-aware message-derived records
+- `TimelineForChatGPT`: branch-aware message-derived records
 
 Current file names:
 
@@ -179,7 +179,7 @@ These names should stay stable across tools.
 ### Index output
 
 - `video2timeline`: `llm/timeline_index.jsonl`
-- `chatgpt2timeline`: `conversation_index.jsonl` and `llm/conversation_index.jsonl`
+- `TimelineForChatGPT`: `conversation_index.jsonl` and `llm/conversation_index.jsonl`
 
 The exact file name can vary by domain.
 The stable idea is:
@@ -210,7 +210,7 @@ Current examples:
   - `transcription`
   - `screen_extraction`
   - `timeline_render`
-- `chatgpt2timeline`
+- `TimelineForChatGPT`
   - `extract_zip`
   - `parse_conversations`
   - `build_indexes`

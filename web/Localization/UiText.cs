@@ -1,7 +1,7 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Localization;
 
-namespace ChatGpt2Timeline.Web.Localization;
+namespace TimelineForChatGPT.Web.Localization;
 
 public sealed class UiText(IHttpContextAccessor httpContextAccessor)
 {

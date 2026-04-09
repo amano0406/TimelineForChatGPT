@@ -1,8 +1,8 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Localization;
-using ChatGpt2Timeline.Web.Services;
-using ChatGpt2Timeline.Web.Localization;
+using TimelineForChatGPT.Web.Services;
+using TimelineForChatGPT.Web.Localization;
 
 var builder = WebApplication.CreateBuilder(args);
 var appPaths = new AppPaths(builder.Configuration);
@@ -80,7 +80,7 @@ app.MapGet("/set-language", (string culture, string? returnUrl, HttpContext http
 app.MapGet("/health", () => Results.Ok(new
 {
     status = "ok",
-    service = "chatgpt2timeline-web",
+    service = "timeline-for-chatgpt-web",
     timestamp = DateTimeOffset.UtcNow,
 }));
 

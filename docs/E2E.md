@@ -1,6 +1,6 @@
 # E2E Smoke
 
-`chatgpt2timeline` now includes a pragmatic smoke-style E2E runner that exercises the current scaffold end to end:
+`TimelineForChatGPT` now includes a pragmatic smoke-style E2E runner that exercises the current scaffold end to end:
 
 1. build the web app
 2. start the local ASP.NET Core server
@@ -15,21 +15,21 @@
 PowerShell:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File C:\apps\chatgpt2timeline\tools\e2e\run-smoke.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\apps\TimelineForChatGPT\tools\e2e\run-smoke.ps1
 ```
 
 Bash / WSL:
 
 ```bash
-/mnt/c/apps/chatgpt2timeline/tools/e2e/run-smoke.sh
+/mnt/c/apps/TimelineForChatGPT/tools/e2e/run-smoke.sh
 ```
 
 ## Fixture Strategy
 
-The runner builds two temporary ZIP files under `C:\Codex\workspaces\chatgpt2timeline-e2e\fixtures`:
+The runner builds two temporary ZIP files under `C:\Codex\workspaces\TimelineForChatGPT-e2e\fixtures`:
 
 - `sample-good-export.zip`
-  - generated from `C:\Codex\workspaces\chatgpt2timeline-smoke\export` by default
+  - generated from `C:\Codex\workspaces\TimelineForChatGPT-smoke\export` by default
   - you can override the source with `-FixtureSourceRoot`
   - currently packages:
     - `export_manifest.json`
@@ -42,7 +42,7 @@ That keeps the smoke test small enough to re-run quickly while still using a rea
 
 ## Output
 
-The runner writes reusable artifacts under `C:\Codex\workspaces\chatgpt2timeline-e2e`:
+The runner writes reusable artifacts under `C:\Codex\workspaces\TimelineForChatGPT-e2e`:
 
 - `runtime/`
   - isolated app-data, uploads, outputs, and web logs

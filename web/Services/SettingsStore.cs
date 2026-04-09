@@ -1,7 +1,7 @@
 using System.Text.Json;
-using ChatGpt2Timeline.Web.Models;
+using TimelineForChatGPT.Web.Models;
 
-namespace ChatGpt2Timeline.Web.Services;
+namespace TimelineForChatGPT.Web.Services;
 
 public sealed class SettingsStore(AppPaths paths)
 {

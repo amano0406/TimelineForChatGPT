@@ -1,5 +1,5 @@
 @page "/jobs/{id}"
-@model ChatGpt2Timeline.Web.Pages.Runs.DetailsModel
+@model TimelineForChatGPT.Web.Pages.Runs.DetailsModel
 @{
     ViewData["Title"] = T["Page.Details.Title"];
     var run = Model.Run!;
@@ -7,7 +7,7 @@
     var result = run.Result;
     var summary = run.ExportSummary;
 
-    static int CompletedCount(ChatGpt2Timeline.Web.Models.JobStatusDocument? source) =>
+    static int CompletedCount(TimelineForChatGPT.Web.Models.JobStatusDocument? source) =>
         (source?.ConversationsDone ?? 0) + (source?.ConversationsSkipped ?? 0) + (source?.ConversationsFailed ?? 0);
 
     static string FormatTimestamp(string? value) =>

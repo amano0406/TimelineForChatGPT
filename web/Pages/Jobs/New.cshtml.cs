@@ -1,9 +1,9 @@
-using ChatGpt2Timeline.Web.Localization;
-using ChatGpt2Timeline.Web.Services;
+using TimelineForChatGPT.Web.Localization;
+using TimelineForChatGPT.Web.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
-namespace ChatGpt2Timeline.Web.Pages.Jobs;
+namespace TimelineForChatGPT.Web.Pages.Jobs;
 
 public sealed class NewModel(RunStore runStore, UiText text) : PageModel
 {

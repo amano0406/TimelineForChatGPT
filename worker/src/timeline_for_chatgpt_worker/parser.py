@@ -697,7 +697,7 @@ def build_archive(run_dir: Path, job_id: str, conversation_rows: list[dict[str, 
             "README.md",
             "\n".join(
                 [
-                    "# chatgpt2timeline Export",
+                    "# TimelineForChatGPT Export",
                     "",
                     f"- Job ID: `{job_id}`",
                     "- Main folder: `timelines/`",

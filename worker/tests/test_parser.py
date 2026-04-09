@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from chatgpt2timeline_worker.contracts import JobRequest, ParserOptions
-from chatgpt2timeline_worker.parser import normalize_conversation
+from timeline_for_chatgpt_worker.contracts import JobRequest, ParserOptions
+from timeline_for_chatgpt_worker.parser import normalize_conversation
 
 
 def make_request() -> JobRequest:

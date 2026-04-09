@@ -1,10 +1,10 @@
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
-using ChatGpt2Timeline.Web.Localization;
-using ChatGpt2Timeline.Web.Models;
+using TimelineForChatGPT.Web.Localization;
+using TimelineForChatGPT.Web.Models;
 
-namespace ChatGpt2Timeline.Web.Services;
+namespace TimelineForChatGPT.Web.Services;
 
 public sealed class RunStore(AppPaths paths, SettingsStore settingsStore, UiText text)
 {

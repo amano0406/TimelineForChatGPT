@@ -1,7 +1,7 @@
 param(
-    [string]$RepoRoot = "C:\apps\chatgpt2timeline",
-    [string]$WorkspaceRoot = "C:\Codex\workspaces\chatgpt2timeline-e2e",
-    [string]$FixtureSourceRoot = "C:\Codex\workspaces\chatgpt2timeline-smoke\export",
+    [string]$RepoRoot = "C:\apps\TimelineForChatGPT",
+    [string]$WorkspaceRoot = "C:\Codex\workspaces\TimelineForChatGPT-e2e",
+    [string]$FixtureSourceRoot = "C:\Codex\workspaces\TimelineForChatGPT-smoke\export",
     [int]$Port = 5092,
     [switch]$KeepWorkspace
 )
@@ -11,7 +11,7 @@ Set-StrictMode -Version Latest
 
 function Write-Step {
     param([string]$Message)
-    Write-Host "[chatgpt2timeline:e2e] $Message"
+    Write-Host "[TimelineForChatGPT:e2e] $Message"
 }
 
 function Assert-True {
@@ -45,6 +45,20 @@ function Ensure-Directory {
     }
 }
 
+function Get-DotnetLauncher {
+    $dotnetCommand = Get-Command dotnet -ErrorAction SilentlyContinue
+    if ($dotnetCommand) {
+        return $dotnetCommand.Source
+    }
+
+    $fallbackPath = "C:\Program Files\dotnet\dotnet.exe"
+    if (Test-Path -LiteralPath $fallbackPath) {
+        return $fallbackPath
+    }
+
+    throw "dotnet was not found in PATH and fallback launcher was not present."
+}
+
 function Remove-DirectoryIfExists {
     param([string]$Path)
 
@@ -56,6 +70,50 @@ function Remove-DirectoryIfExists {
 function Get-FileTextUtf8 {
     param([string]$Path)
     return Get-Content -LiteralPath $Path -Encoding UTF8 -Raw
+}
+
+function New-HttpSessionContext {
+    Add-Type -AssemblyName System.Net.Http
+
+    $cookieContainer = New-Object System.Net.CookieContainer
+    $handler = New-Object System.Net.Http.HttpClientHandler
+    $handler.CookieContainer = $cookieContainer
+    $handler.AllowAutoRedirect = $false
+
+    $client = New-Object System.Net.Http.HttpClient($handler)
+    $client.Timeout = [TimeSpan]::FromSeconds(30)
+
+    return @{
+        Client = $client
+        Handler = $handler
+    }
+}
+
+function Write-HttpResponseArtifacts {
+    param(
+        [System.Net.Http.HttpResponseMessage]$Response,
+        [string]$HeadersPath,
+        [string]$BodyPath
+    )
+
+    $headerLines = [System.Collections.Generic.List[string]]::new()
+    $headerLines.Add(("HTTP/{0} {1} {2}" -f $Response.Version, [int]$Response.StatusCode, $Response.ReasonPhrase))
+
+    foreach ($header in $Response.Headers) {
+        foreach ($value in $header.Value) {
+            $headerLines.Add(("{0}: {1}" -f $header.Key, $value))
+        }
+    }
+
+    foreach ($header in $Response.Content.Headers) {
+        foreach ($value in $header.Value) {
+            $headerLines.Add(("{0}: {1}" -f $header.Key, $value))
+        }
+    }
+
+    [System.IO.File]::WriteAllText($HeadersPath, ($headerLines -join [Environment]::NewLine), [System.Text.Encoding]::UTF8)
+    $body = $Response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+    [System.IO.File]::WriteAllText($BodyPath, $body, [System.Text.Encoding]::UTF8)
 }
 
 function New-GoodFixtureZip {
@@ -129,18 +187,6 @@ function New-BadFixtureZip {
     }
 }
 
-function Invoke-Curl {
-    param(
-        [string[]]$Arguments,
-        [switch]$AllowFailure
-    )
-
-    & curl.exe @Arguments
-    if (-not $AllowFailure -and $LASTEXITCODE -ne 0) {
-        throw "curl.exe failed with exit code $LASTEXITCODE"
-    }
-}
-
 function Wait-ForHealth {
     param(
         [string]$BaseUrl,
@@ -163,6 +209,16 @@ function Wait-ForHealth {
     throw "Timed out waiting for web health endpoint: $BaseUrl/health"
 }
 
+function Download-Page {
+    param(
+        [string]$Url,
+        [string]$TargetPath
+    )
+
+    $response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 30
+    [System.IO.File]::WriteAllText($TargetPath, $response.Content, [System.Text.Encoding]::UTF8)
+}
+
 function Get-RequestVerificationToken {
     param([string]$HtmlPath)
 
@@ -180,50 +236,56 @@ function Submit-Job {
         [string]$Culture = "en"
     )
 
-    $cookieJar = Join-Path $ArtifactRoot ("cookies-" + [System.IO.Path]::GetFileNameWithoutExtension($ZipPath) + ".txt")
     $newJobHeaders = Join-Path $ArtifactRoot ("new-job-" + [System.IO.Path]::GetFileNameWithoutExtension($ZipPath) + ".headers.txt")
     $newJobHtml = Join-Path $ArtifactRoot ("new-job-" + [System.IO.Path]::GetFileNameWithoutExtension($ZipPath) + ".html")
     $postHeaders = Join-Path $ArtifactRoot ("post-job-" + [System.IO.Path]::GetFileNameWithoutExtension($ZipPath) + ".headers.txt")
     $postHtml = Join-Path $ArtifactRoot ("post-job-" + [System.IO.Path]::GetFileNameWithoutExtension($ZipPath) + ".html")
     $newJobUrl = "$BaseUrl/jobs/new?culture=$Culture&ui-culture=$Culture"
 
-    Invoke-Curl -Arguments @(
-        "-s",
-        "-D", $newJobHeaders,
-        "-c", $cookieJar,
-        $newJobUrl,
-        "-o", $newJobHtml
-    )
+    $session = New-HttpSessionContext
+    $multipartContent = $null
+    $stream = $null
 
-    $token = Get-RequestVerificationToken -HtmlPath $newJobHtml
+    try {
+        $getResponse = $session.Client.GetAsync($newJobUrl).GetAwaiter().GetResult()
+        Write-HttpResponseArtifacts -Response $getResponse -HeadersPath $newJobHeaders -BodyPath $newJobHtml
+        $token = Get-RequestVerificationToken -HtmlPath $newJobHtml
 
-    Invoke-Curl -Arguments @(
-        "-s",
-        "-D", $postHeaders,
-        "-b", $cookieJar,
-        "-c", $cookieJar,
-        "-F", "__RequestVerificationToken=$token",
-        "-F", "UploadFile=@$ZipPath;type=application/zip",
-        "-F", "ReprocessDuplicates=false",
-        $newJobUrl,
-        "-o", $postHtml
-    )
+        $multipartContent = New-Object System.Net.Http.MultipartFormDataContent
+        $multipartContent.Add((New-Object System.Net.Http.StringContent($token)), "__RequestVerificationToken")
+        $multipartContent.Add((New-Object System.Net.Http.StringContent("false")), "ReprocessDuplicates")
 
-    $headersText = Get-Content -LiteralPath $postHeaders -Raw
-    $locationMatch = [regex]::Match($headersText, '(?im)^Location:\s*(.+?)\s*$')
-    $location = if ($locationMatch.Success) { $locationMatch.Groups[1].Value.Trim() } else { $null }
-    $jobId = $null
-    if ($location) {
-        $jobMatch = [regex]::Match($location, '/jobs/(?<id>[^/?\r\n]+)')
-        if ($jobMatch.Success) {
-            $jobId = $jobMatch.Groups["id"].Value
+        $stream = [System.IO.File]::OpenRead($ZipPath)
+        $fileContent = New-Object System.Net.Http.StreamContent($stream)
+        $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/zip")
+        $multipartContent.Add($fileContent, "UploadFile", [System.IO.Path]::GetFileName($ZipPath))
+
+        $postResponse = $session.Client.PostAsync($newJobUrl, $multipartContent).GetAwaiter().GetResult()
+        Write-HttpResponseArtifacts -Response $postResponse -HeadersPath $postHeaders -BodyPath $postHtml
+
+        $location = if ($postResponse.Headers.Location) { $postResponse.Headers.Location.OriginalString } else { $null }
+        $jobId = $null
+        if ($location) {
+            $jobMatch = [regex]::Match($location, '/jobs/(?<id>[^/?\r\n]+)')
+            if ($jobMatch.Success) {
+                $jobId = $jobMatch.Groups["id"].Value
+            }
         }
+    }
+    finally {
+        if ($stream) {
+            $stream.Dispose()
+        }
+        if ($multipartContent) {
+            $multipartContent.Dispose()
+        }
+        $session.Client.Dispose()
+        $session.Handler.Dispose()
     }
 
     return @{
         JobId = $jobId
         RedirectLocation = $location
-        CookieJar = $cookieJar
         HeadersPath = $postHeaders
         ResponseHtmlPath = $postHtml
     }
@@ -247,21 +309,25 @@ function Invoke-WorkerRunOnce {
         $pythonLauncher = "py"
     }
 
-    $env:CHATGPT2TIMELINE_RUNTIME_DEFAULTS = Join-Path $RepoRoot "configs\runtime.defaults.json"
-    $env:CHATGPT2TIMELINE_APPDATA_ROOT = $AppDataRoot
-    $env:CHATGPT2TIMELINE_UPLOADS_ROOT = $UploadsRoot
-    $env:CHATGPT2TIMELINE_OUTPUTS_ROOT = $OutputsRoot
+    $env:TIMELINE_FOR_CHATGPT_RUNTIME_DEFAULTS = Join-Path $RepoRoot "configs\runtime.defaults.json"
+    $env:TIMELINE_FOR_CHATGPT_APPDATA_ROOT = $AppDataRoot
+    $env:TIMELINE_FOR_CHATGPT_UPLOADS_ROOT = $UploadsRoot
+    $env:TIMELINE_FOR_CHATGPT_OUTPUTS_ROOT = $OutputsRoot
     $env:PYTHONPATH = Join-Path $RepoRoot "worker\src"
+    $workerExitCode = 0
 
     if ($pythonLauncher -eq "py") {
-        & py -3 -m chatgpt2timeline_worker run-once
+        & py -3 -m timeline_for_chatgpt_worker run-once
     }
     else {
-        & $pythonLauncher -m chatgpt2timeline_worker run-once
+        & $pythonLauncher -m timeline_for_chatgpt_worker run-once
     }
 
-    if ($LASTEXITCODE -ne 0) {
-        throw "Worker run-once failed with exit code $LASTEXITCODE"
+    if (Test-Path variable:LASTEXITCODE) {
+        $workerExitCode = $LASTEXITCODE
+    }
+    if ($workerExitCode -ne 0) {
+        throw "Worker run-once failed with exit code $workerExitCode"
     }
 }
 
@@ -284,8 +350,20 @@ function Assert-GoodRun {
     )
 
     $runDir = Join-Path $OutputsRoot $JobId
-    $status = Get-JsonObject -Path (Join-Path $runDir "status.json")
-    $result = Get-JsonObject -Path (Join-Path $runDir "result.json")
+    $statusPath = Join-Path $runDir "status.json"
+    $resultPath = Join-Path $runDir "result.json"
+    $deadline = (Get-Date).AddSeconds(10)
+    $status = $null
+    $result = $null
+
+    while ((Get-Date) -lt $deadline) {
+        $status = Get-JsonObject -Path $statusPath
+        $result = Get-JsonObject -Path $resultPath
+        if ($status.state -eq "completed" -and $result.state -eq "completed") {
+            break
+        }
+        Start-Sleep -Milliseconds 250
+    }
 
     Assert-True ($status.state -eq "completed") "Good fixture run did not complete."
     Assert-True ($result.state -eq "completed") "Good fixture result did not complete."
@@ -327,12 +405,12 @@ function Assert-GoodRun {
     $conversationEn = Join-Path $ArtifactRoot "conversation-en.html"
     $conversationJa = Join-Path $ArtifactRoot "conversation-ja.html"
 
-    Invoke-Curl -Arguments @("-s", "$BaseUrl/jobs?culture=en&ui-culture=en", "-o", $jobsEn)
-    Invoke-Curl -Arguments @("-s", "$BaseUrl/jobs?culture=ja&ui-culture=ja", "-o", $jobsJa)
-    Invoke-Curl -Arguments @("-s", "$BaseUrl/jobs/${JobId}?culture=en&ui-culture=en", "-o", $detailsEn)
-    Invoke-Curl -Arguments @("-s", "$BaseUrl/jobs/${JobId}?culture=ja&ui-culture=ja", "-o", $detailsJa)
-    Invoke-Curl -Arguments @("-s", "$BaseUrl/jobs/${JobId}/conversations/${conversationId}?culture=en&ui-culture=en", "-o", $conversationEn)
-    Invoke-Curl -Arguments @("-s", "$BaseUrl/jobs/${JobId}/conversations/${conversationId}?culture=ja&ui-culture=ja", "-o", $conversationJa)
+    Download-Page -Url "$BaseUrl/jobs?culture=en&ui-culture=en" -TargetPath $jobsEn
+    Download-Page -Url "$BaseUrl/jobs?culture=ja&ui-culture=ja" -TargetPath $jobsJa
+    Download-Page -Url "$BaseUrl/jobs/${JobId}?culture=en&ui-culture=en" -TargetPath $detailsEn
+    Download-Page -Url "$BaseUrl/jobs/${JobId}?culture=ja&ui-culture=ja" -TargetPath $detailsJa
+    Download-Page -Url "$BaseUrl/jobs/${JobId}/conversations/${conversationId}?culture=en&ui-culture=en" -TargetPath $conversationEn
+    Download-Page -Url "$BaseUrl/jobs/${JobId}/conversations/${conversationId}?culture=ja&ui-culture=ja" -TargetPath $conversationJa
 
     $jobsEnText = Get-FileTextUtf8 -Path $jobsEn
     $jobsJaText = Get-FileTextUtf8 -Path $jobsJa
@@ -409,14 +487,22 @@ New-BadFixtureZip -GoodZipPath $goodZip -BadZipPath $badZip
 
 Write-Step "Building ASP.NET Core web app"
 Remove-DirectoryIfExists -Path (Join-Path $RepoRoot "web\obj")
+$dotnetLauncher = Get-DotnetLauncher
 Push-Location (Join-Path $RepoRoot "web")
 try {
-    & dotnet build `
+    $buildExitCode = 0
+    & $dotnetLauncher build `
         "/p:UseAppHost=false" `
         "/p:BaseOutputPath=$webBaseOutputRoot" `
         "/p:BaseIntermediateOutputPath=$webBaseIntermediateRoot"
-    if ($LASTEXITCODE -ne 0) {
-        throw "dotnet build failed with exit code $LASTEXITCODE"
+    if (Test-Path variable:LASTEXITCODE) {
+        $buildExitCode = $LASTEXITCODE
+    }
+    if (-not $?) {
+        throw "dotnet build failed."
+    }
+    if ($buildExitCode -ne 0) {
+        throw "dotnet build failed with exit code $buildExitCode"
     }
 }
 finally {
@@ -424,18 +510,18 @@ finally {
 }
 
 $env:ASPNETCORE_URLS = $BaseUrl
-$env:CHATGPT2TIMELINE_RUNTIME_DEFAULTS = Join-Path $RepoRoot "configs\runtime.defaults.json"
-$env:CHATGPT2TIMELINE_APPDATA_ROOT = $appDataRoot
-$env:CHATGPT2TIMELINE_UPLOADS_ROOT = $uploadsRoot
-$env:CHATGPT2TIMELINE_OUTPUTS_ROOT = $outputsRoot
+$env:TIMELINE_FOR_CHATGPT_RUNTIME_DEFAULTS = Join-Path $RepoRoot "configs\runtime.defaults.json"
+$env:TIMELINE_FOR_CHATGPT_APPDATA_ROOT = $appDataRoot
+$env:TIMELINE_FOR_CHATGPT_UPLOADS_ROOT = $uploadsRoot
+$env:TIMELINE_FOR_CHATGPT_OUTPUTS_ROOT = $outputsRoot
 
 $webProcess = $null
-$webAssemblyPath = Join-Path $webBaseOutputRoot "Debug\net10.0\ChatGpt2Timeline.Web.dll"
+$webProjectPath = Join-Path $RepoRoot "web\TimelineForChatGPT.Web.csproj"
 try {
     Write-Step "Starting web server on $BaseUrl"
     $webProcess = Start-Process `
-        -FilePath "dotnet" `
-        -ArgumentList @($webAssemblyPath) `
+        -FilePath $dotnetLauncher `
+        -ArgumentList @("run", "--no-launch-profile", "--project", $webProjectPath) `
         -WorkingDirectory (Join-Path $RepoRoot "web") `
         -RedirectStandardOutput $webStdout `
         -RedirectStandardError $webStderr `

@@ -1,9 +1,9 @@
 @page "/jobs"
-@model ChatGpt2Timeline.Web.Pages.Jobs.IndexModel
+@model TimelineForChatGPT.Web.Pages.Jobs.IndexModel
 @{
     ViewData["Title"] = T["Page.Jobs.Title"];
 
-    static int CompletedCount(ChatGpt2Timeline.Web.Models.RunSummary run) =>
+    static int CompletedCount(TimelineForChatGPT.Web.Models.RunSummary run) =>
         run.ConversationsDone + run.ConversationsSkipped + run.ConversationsFailed;
 
     static string FormatBytes(long value)

@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
-namespace ChatGpt2Timeline.Web.Pages;
+namespace TimelineForChatGPT.Web.Pages;
 
 public class PrivacyModel : PageModel
 {

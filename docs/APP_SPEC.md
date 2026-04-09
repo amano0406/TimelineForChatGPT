@@ -2,7 +2,7 @@
 
 ## Goal
 
-`chatgpt2timeline` converts a local ChatGPT export into timeline-oriented text that can be reviewed by a human or handed to an LLM.
+`TimelineForChatGPT` converts a local ChatGPT export into timeline-oriented text that can be reviewed by a human or handed to an LLM.
 
 The system prioritizes:
 

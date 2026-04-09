@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`video2timeline` and `chatgpt2timeline` should be different parsers that converge on a similar downstream shape.
+`video2timeline` and `TimelineForChatGPT` should be different parsers that converge on a similar downstream shape.
 
 The best place to align them is the normalized event layer.
 
@@ -21,7 +21,7 @@ Its normalized timeline is derived from:
 
 The important unit is a time-bounded media segment.
 
-### `chatgpt2timeline`
+### `TimelineForChatGPT`
 
 Its current scaffold writes:
 
@@ -115,7 +115,7 @@ Recommended semantics:
   - `actor = observer`
   - `kind = screen_change`
 
-### `chatgpt2timeline` -> common envelope
+### `TimelineForChatGPT` -> common envelope
 
 - user or assistant message
   - `actor = role`
@@ -138,7 +138,7 @@ The grouping rule differs by source:
 
 - `video2timeline`
   - group nearby transcript and screen context by time range
-- `chatgpt2timeline`
+- `TimelineForChatGPT`
   - group one or more adjacent messages by conversation flow
 
 But the segment contract can still converge on:
@@ -151,7 +151,7 @@ But the segment contract can still converge on:
 - `summary`
 - `event_ids[]`
 
-## Current `chatgpt2timeline` Status
+## Current `TimelineForChatGPT` Status
 
 Right now the scaffold keeps these distinctions:
 
@@ -177,7 +177,7 @@ These details should stay in `payload`, not the shared top-level keys.
 - frame file paths
 - diarization metadata
 
-### `chatgpt2timeline`
+### `TimelineForChatGPT`
 
 - `message_id`
 - `parent_message_id`

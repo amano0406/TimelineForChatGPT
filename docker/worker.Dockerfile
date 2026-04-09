@@ -10,4 +10,4 @@ COPY configs/ /app/config/
 
 RUN pip install --no-cache-dir /app/worker
 
-ENTRYPOINT ["python", "-m", "chatgpt2timeline_worker", "daemon", "--poll-interval", "5"]
+ENTRYPOINT ["python", "-m", "timeline_for_chatgpt_worker", "daemon", "--poll-interval", "5"]

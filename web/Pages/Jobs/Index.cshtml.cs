@@ -1,8 +1,8 @@
-using ChatGpt2Timeline.Web.Models;
-using ChatGpt2Timeline.Web.Services;
+using TimelineForChatGPT.Web.Models;
+using TimelineForChatGPT.Web.Services;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
-namespace ChatGpt2Timeline.Web.Pages.Jobs;
+namespace TimelineForChatGPT.Web.Pages.Jobs;
 
 public sealed class IndexModel(RunStore runStore) : PageModel
 {

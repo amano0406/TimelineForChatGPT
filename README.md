@@ -1,4 +1,4 @@
-# chatgpt2timeline
+# TimelineForChatGPT
 
 Local-first tool that turns ChatGPT export ZIP files into timeline-oriented outputs, with a product shape intentionally close to `video2timeline`.
 
@@ -59,13 +59,13 @@ There is now a local smoke-style E2E runner that exercises:
 PowerShell:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File C:\apps\chatgpt2timeline\tools\e2e\run-smoke.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\apps\TimelineForChatGPT\tools\e2e\run-smoke.ps1
 ```
 
 Bash / WSL:
 
 ```bash
-/mnt/c/apps/chatgpt2timeline/tools/e2e/run-smoke.sh
+/mnt/c/apps/TimelineForChatGPT/tools/e2e/run-smoke.sh
 ```
 
 More detail:
@@ -77,13 +77,13 @@ More detail:
 Worker unit tests:
 
 ```bash
-PYTHONPATH=/mnt/c/apps/chatgpt2timeline/worker/src python3 -m unittest discover -s /mnt/c/apps/chatgpt2timeline/worker/tests -v
+PYTHONPATH=/mnt/c/apps/TimelineForChatGPT/worker/src python3 -m unittest discover -s /mnt/c/apps/TimelineForChatGPT/worker/tests -v
 ```
 
 Smoke E2E:
 
 ```bash
-/mnt/c/apps/chatgpt2timeline/tools/e2e/run-smoke.sh
+/mnt/c/apps/TimelineForChatGPT/tools/e2e/run-smoke.sh
 ```
 
 ## Relationship to `video2timeline`
@@ -97,7 +97,7 @@ This repo is intentionally close to `video2timeline`, but it is not a fork of th
   - local-first Docker Compose shape
 - source-specific direction:
   - `video2timeline` parses media
-  - `chatgpt2timeline` parses ChatGPT export graphs
+  - `TimelineForChatGPT` parses ChatGPT export graphs
 
 Reference docs:
 

@@ -7,7 +7,7 @@ from .processor import process_pending_jobs
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="chatgpt2timeline worker")
+    parser = argparse.ArgumentParser(description="TimelineForChatGPT worker")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     daemon = subparsers.add_parser("daemon", help="Poll for pending jobs.")

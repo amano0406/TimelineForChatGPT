@@ -10,7 +10,7 @@ from .parser import normalize_export
 
 
 def outputs_root() -> Path:
-    return Path(os.environ.get("CHATGPT2TIMELINE_OUTPUTS_ROOT", "/shared/outputs"))
+    return Path(os.environ.get("TIMELINE_FOR_CHATGPT_OUTPUTS_ROOT", "/shared/outputs"))
 
 
 def iter_pending_runs() -> list[Path]:

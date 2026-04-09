@@ -1,9 +1,9 @@
-using ChatGpt2Timeline.Web.Models;
-using ChatGpt2Timeline.Web.Services;
+using TimelineForChatGPT.Web.Models;
+using TimelineForChatGPT.Web.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
-namespace ChatGpt2Timeline.Web.Pages.Runs;
+namespace TimelineForChatGPT.Web.Pages.Runs;
 
 public sealed class ConversationModel(RunStore runStore) : PageModel
 {
