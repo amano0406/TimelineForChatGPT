@@ -44,7 +44,7 @@ docker compose up --build
 
 Default web URL:
 
-- [http://localhost:8088](http://localhost:8088)
+- [http://localhost:19300](http://localhost:19300)
 
 ## E2E smoke
 

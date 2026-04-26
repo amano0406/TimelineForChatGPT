@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import tempfile
 import zipfile
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
@@ -12,11 +13,14 @@ from .contracts import JobRequest
 from .fs_utils import ensure_dir, load_json, slugify, write_json, write_jsonl
 
 
-def prepare_export_root(run_dir: Path, request: JobRequest) -> tuple[Path, str]:
+def prepare_export_root(run_dir: Path, request: JobRequest) -> tuple[Path, str, Path | None]:
     input_item = request.input_items[0]
     uploaded_path = Path(input_item.uploaded_path or "")
     if input_item.source_kind == "upload_zip":
-        extraction_root = ensure_dir(run_dir / "input" / "extracted")
+        extraction_root = build_short_extraction_root(uploaded_path, request.job_id)
+        if extraction_root.exists():
+            shutil.rmtree(extraction_root, ignore_errors=True)
+        ensure_dir(extraction_root)
         try:
             with zipfile.ZipFile(uploaded_path) as archive:
                 archive.extractall(extraction_root)
@@ -28,15 +32,29 @@ def prepare_export_root(run_dir: Path, request: JobRequest) -> tuple[Path, str]:
         export_root = resolve_export_root(extraction_root)
         if not has_export_signature(export_root):
             raise ValueError("The extracted ZIP does not look like a ChatGPT export.")
-        return export_root, input_item.display_name
+        return export_root, input_item.display_name, extraction_root
 
     source_path = Path(input_item.uploaded_path or input_item.original_path)
     if source_path.is_dir():
         if not has_export_signature(source_path):
             raise ValueError("The selected directory does not look like a ChatGPT export.")
-        return source_path, input_item.display_name
+        return source_path, input_item.display_name, None
 
     raise ValueError(f"Unsupported input kind: {input_item.source_kind}")
+
+
+def build_short_extraction_root(uploaded_path: Path, job_id: str) -> Path:
+    job_token = job_id.rsplit("-", 1)[-1] or "job"
+    anchor = uploaded_path.anchor.rstrip("\\/")
+    if anchor.endswith(":"):
+        return Path(f"{anchor}\\") / "t" / job_token
+
+    temp_root = Path(tempfile.gettempdir())
+    temp_anchor = temp_root.anchor.rstrip("\\/")
+    if temp_anchor.endswith(":"):
+        return Path(f"{temp_anchor}\\") / "t" / job_token
+
+    return temp_root / "t" / job_token
 
 
 def resolve_export_root(root: Path) -> Path:
@@ -82,122 +100,126 @@ def normalize_export(
     request: JobRequest,
     on_progress: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
-    export_root, input_name = prepare_export_root(run_dir, request)
-    conversations, conversation_file_count = load_conversations(export_root)
-    analysis_summary = try_load_analysis_summary(export_root)
+    export_root, input_name, cleanup_root = prepare_export_root(run_dir, request)
+    try:
+        conversations, conversation_file_count = load_conversations(export_root)
+        analysis_summary = try_load_analysis_summary(export_root)
 
-    conversation_rows: list[dict[str, Any]] = []
-    manifest_items: list[dict[str, Any]] = []
-    role_counts: Counter[str] = Counter()
-    content_type_counts: Counter[str] = Counter()
-    total_messages = 0
-    date_min: str | None = None
-    date_max: str | None = None
+        conversation_rows: list[dict[str, Any]] = []
+        manifest_items: list[dict[str, Any]] = []
+        role_counts: Counter[str] = Counter()
+        content_type_counts: Counter[str] = Counter()
+        total_messages = 0
+        date_min: str | None = None
+        date_max: str | None = None
 
-    conversations_root = ensure_dir(run_dir / "conversations")
-    llm_root = ensure_dir(run_dir / "llm")
+        conversations_root = ensure_dir(run_dir / "conversations")
+        llm_root = ensure_dir(run_dir / "llm")
 
-    if on_progress is not None:
-        on_progress(
-            {
-                "stage": "parse_conversations",
-                "message": "Loaded conversation files.",
-                "conversations_total": len(conversations),
-                "conversations_done": 0,
-                "current_conversation": None,
-            }
-        )
-
-    for index, conversation in enumerate(conversations, start=1):
-        normalized = normalize_conversation(conversation, request)
-        summary = normalized["summary"]
-        messages = normalized["messages"]
-        events = normalized["events"]
-        segments = normalized["segments"]
-        total_messages += summary["message_count_total"]
-        role_counts.update(normalized["role_counts"])
-        content_type_counts.update(normalized["content_type_counts"])
-        date_min = min_utc(date_min, summary.get("create_time"))
-        date_max = max_utc(date_max, summary.get("update_time"))
-
-        conversation_rows.append(summary)
-        manifest_items.append(
-            {
-                "conversation_id": summary["conversation_id"],
-                "title": summary["title"],
-                "status": "completed",
-                "started_at_utc": summary["started_at_utc"],
-                "ended_at_utc": summary["ended_at_utc"],
-                "message_count_total": summary["message_count_total"],
-                "main_branch_message_count": summary["main_branch_message_count"],
-                "branch_count": summary["branch_count"],
-                "attachment_count": summary["attachment_count"],
-                "image_count": summary["image_count"],
-                "audio_count": summary["audio_count"],
-                "tool_count": summary["tool_count"],
-                "has_tool_messages": summary["has_tool_messages"],
-                "has_system_messages": summary["has_system_messages"],
-                "has_attachments": summary["has_attachments"],
-                "has_multimodal_content": summary["has_multimodal_content"],
-                "timeline_path": summary["timeline_path"],
-            }
-        )
-
-        conversation_dir = ensure_dir(conversations_root / summary["conversation_id"])
-        write_json(conversation_dir / "conversation.json", conversation)
-        write_jsonl(conversation_dir / "messages.jsonl", messages)
-        write_jsonl(conversation_dir / "events.jsonl", events)
-        write_json(conversation_dir / "segments.json", {"items": segments})
-        (conversation_dir / "timeline.md").write_text(normalized["timeline_markdown"], encoding="utf-8")
-        write_json(conversation_dir / "attachments.json", {"items": normalized["asset_refs"]})
-
-        if on_progress is not None and (index == 1 or index % 25 == 0 or index == len(conversations)):
+        if on_progress is not None:
             on_progress(
                 {
                     "stage": "parse_conversations",
-                    "message": f"Processed {index} / {len(conversations)} conversations.",
+                    "message": "Loaded conversation files.",
                     "conversations_total": len(conversations),
-                    "conversations_done": index,
-                    "current_conversation": summary["title"] or summary["conversation_id"],
+                    "conversations_done": 0,
+                    "current_conversation": None,
                 }
             )
 
-    write_jsonl(run_dir / "conversation_index.jsonl", conversation_rows)
-    export_summary = {
-        "job_id": request.job_id,
-        "input_name": input_name,
-        "conversation_files": conversation_file_count,
-        "total_conversations": int(analysis_summary.get("total_conversations", len(conversation_rows))),
-        "total_messages": int(analysis_summary.get("total_messages", total_messages)),
-        "message_role_counts": analysis_summary.get("message_roles", dict(role_counts)),
-        "message_content_type_counts": analysis_summary.get("message_content_types", dict(content_type_counts)),
-        "date_min_utc": analysis_summary.get("date_min_utc", date_min),
-        "date_max_utc": analysis_summary.get("date_max_utc", date_max),
-    }
-    write_json(run_dir / "export_summary.json", export_summary)
+        for index, conversation in enumerate(conversations, start=1):
+            normalized = normalize_conversation(conversation, request)
+            summary = normalized["summary"]
+            messages = normalized["messages"]
+            events = normalized["events"]
+            segments = normalized["segments"]
+            total_messages += summary["message_count_total"]
+            role_counts.update(normalized["role_counts"])
+            content_type_counts.update(normalized["content_type_counts"])
+            date_min = min_utc(date_min, summary.get("create_time"))
+            date_max = max_utc(date_max, summary.get("update_time"))
 
-    if on_progress is not None:
-        on_progress(
-            {
-                "stage": "build_indexes",
-                "message": "Building LLM pack and archive.",
-                "conversations_total": len(conversation_rows),
-                "conversations_done": len(conversation_rows),
-                "current_conversation": None,
-            }
-        )
+            conversation_rows.append(summary)
+            manifest_items.append(
+                {
+                    "conversation_id": summary["conversation_id"],
+                    "title": summary["title"],
+                    "status": "completed",
+                    "started_at_utc": summary["started_at_utc"],
+                    "ended_at_utc": summary["ended_at_utc"],
+                    "message_count_total": summary["message_count_total"],
+                    "main_branch_message_count": summary["main_branch_message_count"],
+                    "branch_count": summary["branch_count"],
+                    "attachment_count": summary["attachment_count"],
+                    "image_count": summary["image_count"],
+                    "audio_count": summary["audio_count"],
+                    "tool_count": summary["tool_count"],
+                    "has_tool_messages": summary["has_tool_messages"],
+                    "has_system_messages": summary["has_system_messages"],
+                    "has_attachments": summary["has_attachments"],
+                    "has_multimodal_content": summary["has_multimodal_content"],
+                    "timeline_path": summary["timeline_path"],
+                }
+            )
 
-    batch_count = build_llm_pack(llm_root, conversation_rows, conversations_root)
-    archive_path = build_archive(run_dir, request.job_id, conversation_rows, llm_root)
+            conversation_dir = ensure_dir(conversations_root / summary["conversation_id"])
+            write_json(conversation_dir / "conversation.json", conversation)
+            write_jsonl(conversation_dir / "messages.jsonl", messages)
+            write_jsonl(conversation_dir / "events.jsonl", events)
+            write_json(conversation_dir / "segments.json", {"items": segments})
+            (conversation_dir / "timeline.md").write_text(normalized["timeline_markdown"], encoding="utf-8")
+            write_json(conversation_dir / "attachments.json", {"items": normalized["asset_refs"]})
 
-    return {
-        "export_summary": export_summary,
-        "conversation_rows": conversation_rows,
-        "manifest_items": manifest_items,
-        "batch_count": batch_count,
-        "archive_path": str(archive_path),
-        "conversation_index_path": str(run_dir / "conversation_index.jsonl"),
-    }
+            if on_progress is not None and (index == 1 or index % 25 == 0 or index == len(conversations)):
+                on_progress(
+                    {
+                        "stage": "parse_conversations",
+                        "message": f"Processed {index} / {len(conversations)} conversations.",
+                        "conversations_total": len(conversations),
+                        "conversations_done": index,
+                        "current_conversation": summary["title"] or summary["conversation_id"],
+                    }
+                )
+
+        write_jsonl(run_dir / "conversation_index.jsonl", conversation_rows)
+        export_summary = {
+            "job_id": request.job_id,
+            "input_name": input_name,
+            "conversation_files": conversation_file_count,
+            "total_conversations": int(analysis_summary.get("total_conversations", len(conversation_rows))),
+            "total_messages": int(analysis_summary.get("total_messages", total_messages)),
+            "message_role_counts": analysis_summary.get("message_roles", dict(role_counts)),
+            "message_content_type_counts": analysis_summary.get("message_content_types", dict(content_type_counts)),
+            "date_min_utc": analysis_summary.get("date_min_utc", date_min),
+            "date_max_utc": analysis_summary.get("date_max_utc", date_max),
+        }
+        write_json(run_dir / "export_summary.json", export_summary)
+
+        if on_progress is not None:
+            on_progress(
+                {
+                    "stage": "build_indexes",
+                    "message": "Building LLM pack and archive.",
+                    "conversations_total": len(conversation_rows),
+                    "conversations_done": len(conversation_rows),
+                    "current_conversation": None,
+                }
+            )
+
+        batch_count = build_llm_pack(llm_root, conversation_rows, conversations_root)
+        archive_path = build_archive(run_dir, request.job_id, conversation_rows, llm_root)
+
+        return {
+            "export_summary": export_summary,
+            "conversation_rows": conversation_rows,
+            "manifest_items": manifest_items,
+            "batch_count": batch_count,
+            "archive_path": str(archive_path),
+            "conversation_index_path": str(run_dir / "conversation_index.jsonl"),
+        }
+    finally:
+        if cleanup_root is not None and cleanup_root.exists():
+            shutil.rmtree(cleanup_root, ignore_errors=True)
 
 
 def try_load_analysis_summary(export_root: Path) -> dict[str, Any]:

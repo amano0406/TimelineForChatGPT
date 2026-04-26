@@ -6,7 +6,11 @@ using TimelineForChatGPT.Web.Localization;
 
 var builder = WebApplication.CreateBuilder(args);
 var appPaths = new AppPaths(builder.Configuration);
-const long MaxUploadBytes = 4L * 1024 * 1024 * 1024;
+const long DefaultMaxUploadBytes = 8L * 1024 * 1024 * 1024;
+var maxUploadBytesSetting = builder.Configuration["TIMELINE_FOR_CHATGPT_MAX_UPLOAD_BYTES"];
+var maxUploadBytes = long.TryParse(maxUploadBytesSetting, out var parsedMaxUploadBytes) && parsedMaxUploadBytes > 0
+    ? parsedMaxUploadBytes
+    : DefaultMaxUploadBytes;
 var supportedCultures = new[] { new CultureInfo("ja"), new CultureInfo("en") };
 
 Directory.CreateDirectory(appPaths.AppDataRoot);
@@ -15,7 +19,7 @@ Directory.CreateDirectory(appPaths.OutputsRoot);
 
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.Limits.MaxRequestBodySize = MaxUploadBytes;
+    options.Limits.MaxRequestBodySize = maxUploadBytes;
 });
 
 builder.Services.AddHttpContextAccessor();
@@ -36,7 +40,7 @@ builder.Services.Configure<RequestLocalizationOptions>(options =>
 builder.Services.AddRazorPages();
 builder.Services.Configure<FormOptions>(options =>
 {
-    options.MultipartBodyLengthLimit = MaxUploadBytes;
+    options.MultipartBodyLengthLimit = maxUploadBytes;
 });
 builder.Services.AddSingleton(appPaths);
 builder.Services.AddSingleton<SettingsStore>();
