@@ -2,11 +2,11 @@
 
 ## 1. Request Creation
 
-The web app writes `request.json` into a new `job-*` directory under the configured output root.
+The CLI writes `request.json` into a new `job-*` directory under the configured output root.
 
-## 2. Worker Pickup
+## 2. Worker Execution
 
-The Python worker polls output roots for pending jobs whose `status.json` is still `pending`.
+The Python worker can process that run immediately through the CLI `process` command, or it can poll output roots for pending jobs whose `status.json` is still `pending`.
 
 ## 3. Extract
 

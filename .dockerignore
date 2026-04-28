@@ -1,13 +1,8 @@
-bin/
-obj/
-.vs/
-.vscode/
+.git/
 __pycache__/
-.pytest_cache/
 *.pyc
 *.pyo
-*.zip
-
+.pytest_cache/
 worker/.venv/
-
 artifacts/
+*.zip

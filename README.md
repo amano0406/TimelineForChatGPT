@@ -1,17 +1,17 @@
 # TimelineForChatGPT
 
-Local-first tool that turns ChatGPT export ZIP files into timeline-oriented outputs, with a product shape intentionally close to `video2timeline`.
+Local-first CLI tool that turns ChatGPT export ZIP files into timeline-oriented artifacts.
 
-## Current scaffold scope
+The product no longer includes a web UI. The Python CLI / worker and generated output files are the source of truth.
 
-- `web`: ASP.NET Core Razor Pages
-- `worker`: Python
-- `docker-compose.yml`: `web` + `worker`
-- job flow:
-  - `/jobs/new`
-  - `/jobs`
-  - `/jobs/{id}`
-- worker output:
+## Current Scope
+
+- `worker`: Python CLI and worker pipeline
+- `docker-compose.yml`: worker-only development/runtime service
+- input:
+  - one ChatGPT export ZIP
+  - one extracted ChatGPT export directory
+- output:
   - `request.json`
   - `status.json`
   - `result.json`
@@ -27,50 +27,44 @@ Local-first tool that turns ChatGPT export ZIP files into timeline-oriented outp
   - `llm/conversation_corpus-YYYY-MM.jsonl`
   - `job-....zip`
 
-## Current limitations
+## CLI Usage
 
-- primary input is one ChatGPT export ZIP per job
-- chunked upload is not implemented yet
-- extracted directory input is not implemented yet
-- timeline rendering is still a best-effort scaffold parser
-- normalized events and segments are still evolving toward the shared timeline contract
-- older ChatGPT export downloads can be corrupted; the scaffold now rejects ZIP files that cannot be opened cleanly
-
-## Local development
+Run from source:
 
 ```bash
-docker compose up --build
+cd /mnt/c/apps/TimelineForChatGPT
+PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker process /path/to/chatgpt-export.zip --output-root /tmp/timelineforchatgpt-outputs
 ```
 
-Default web URL:
+The command prints the run directory. The original export file is read in place; it is not deleted, overwritten, moved, or renamed.
 
-- [http://localhost:19300](http://localhost:19300)
-
-## E2E smoke
-
-There is now a local smoke-style E2E runner that exercises:
-
-- `/jobs/new` multipart ZIP upload
-- worker `run-once`
-- successful run output
-- corrupted ZIP failure
-- English and Japanese UI text checks
-
-PowerShell:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File C:\apps\TimelineForChatGPT\tools\e2e\run-smoke.ps1
-```
-
-Bash / WSL:
+Process existing queued jobs:
 
 ```bash
-/mnt/c/apps/TimelineForChatGPT/tools/e2e/run-smoke.sh
+PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker run-once
 ```
 
-More detail:
+Run the polling worker:
 
-- [docs/E2E.md](docs/E2E.md)
+```bash
+PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker daemon
+```
+
+## Docker
+
+Build the worker image:
+
+```bash
+docker compose build
+```
+
+Run the worker daemon:
+
+```bash
+docker compose up
+```
+
+There is no browser URL or exposed port. The compose file only runs the worker container and shared local volumes.
 
 ## Validation
 
@@ -80,23 +74,23 @@ Worker unit tests:
 PYTHONPATH=/mnt/c/apps/TimelineForChatGPT/worker/src python3 -m unittest discover -s /mnt/c/apps/TimelineForChatGPT/worker/tests -v
 ```
 
-Smoke E2E:
+## Current Limitations
 
-```bash
-/mnt/c/apps/TimelineForChatGPT/tools/e2e/run-smoke.sh
-```
+- primary input is one ChatGPT export ZIP or one extracted export directory per CLI job
+- timeline rendering is still a best-effort scaffold parser
+- normalized events and segments are still evolving toward the shared timeline contract
+- older ChatGPT export downloads can be corrupted; the worker rejects ZIP files that cannot be opened cleanly
 
-## Relationship to `video2timeline`
+## Relationship To TimelineForVideo
 
-This repo is intentionally close to `video2timeline`, but it is not a fork of the video worker.
+This repo is intentionally close to `TimelineForVideo`, but it is not a fork of the video worker.
 
 - shared direction:
-  - job flow
   - run directory contract
   - timeline-oriented outputs
   - local-first Docker Compose shape
 - source-specific direction:
-  - `video2timeline` parses media
+  - `TimelineForVideo` parses media
   - `TimelineForChatGPT` parses ChatGPT export graphs
 
 Reference docs:
@@ -104,7 +98,7 @@ Reference docs:
 - [docs/COMMON_OUTPUT_CONTRACT.md](docs/COMMON_OUTPUT_CONTRACT.md)
 - [docs/NORMALIZED_EVENT_ALIGNMENT.md](docs/NORMALIZED_EVENT_ALIGNMENT.md)
 
-## Sample validation note
+## Sample Validation Note
 
 The local Downloads folder already contained both valid and invalid ChatGPT export ZIP files.
 
@@ -119,12 +113,11 @@ The local Downloads folder already contained both valid and invalid ChatGPT expo
 
 Those invalid files still start with a ZIP local header, but they miss the end-of-central-directory record and fail with `BadZipFile`.
 
-## Repo layout
+## Repo Layout
 
 ```text
 configs/
 docker/
 docs/
-web/
 worker/
 ```

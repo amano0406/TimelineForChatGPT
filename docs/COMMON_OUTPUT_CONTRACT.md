@@ -7,7 +7,7 @@
 The immediate goal is not a single shared repo.
 The immediate goal is a shared contract so that:
 
-- the web flow feels the same
+- CLI and worker output flows stay predictable
 - downstream readers can inspect runs in a similar way
 - ZIP handoff packages stay predictable
 - future common viewers or indexers can read both tools with minimal branching
@@ -27,7 +27,7 @@ That means:
 Both tools should keep the same top-level run model:
 
 - one job creates one run directory
-- the web app writes `request.json`
+- the CLI writes `request.json`
 - the worker owns `status.json`, `result.json`, and `manifest.json`
 - the worker also writes human-readable deliverables and a final ZIP
 

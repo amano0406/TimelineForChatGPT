@@ -7,10 +7,66 @@ import unittest
 import zipfile
 from pathlib import Path
 
+from timeline_for_chatgpt_worker.cli import create_job_from_input
 from timeline_for_chatgpt_worker.processor import process_job
 
 
 class ProcessJobTests(unittest.TestCase):
+    def test_cli_job_creation_processes_zip_without_copying_input(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source_dir = root / "source"
+            source_dir.mkdir()
+            upload_path = source_dir / "export.zip"
+            with zipfile.ZipFile(upload_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr("export_manifest.json", "{}")
+                archive.writestr(
+                    "conversations.json",
+                    json.dumps(
+                        [
+                            {
+                                "id": "conv-1",
+                                "conversation_id": "conv-1",
+                                "title": "CLI",
+                                "current_node": "n1",
+                                "mapping": {
+                                    "n1": {
+                                        "id": "n1",
+                                        "parent": None,
+                                        "children": [],
+                                        "message": {
+                                            "id": "m1",
+                                            "author": {"role": "user"},
+                                            "create_time": "2026-01-01T00:00:00Z",
+                                            "content": {
+                                                "content_type": "text",
+                                                "parts": ["hello from cli"],
+                                            },
+                                        },
+                                    }
+                                },
+                            }
+                        ]
+                    ),
+                )
+
+            output_root = root / "outputs"
+            run_dir = create_job_from_input(
+                input_path=upload_path,
+                output_root=output_root,
+                profile="timeline-default",
+                job_id="job-cli",
+            )
+            process_job(run_dir)
+
+            request = json.loads((run_dir / "request.json").read_text(encoding="utf-8"))
+            status = json.loads((run_dir / "status.json").read_text(encoding="utf-8"))
+
+            self.assertEqual(request["input_items"][0]["uploaded_path"], str(upload_path))
+            self.assertTrue(upload_path.exists())
+            self.assertEqual(status["state"], "completed")
+            self.assertTrue((run_dir / "job-cli.zip").exists())
+
     def test_archive_contains_final_run_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -13,19 +13,16 @@ The system prioritizes:
 
 ## App Model
 
-- `web`: ASP.NET Core Razor Pages
-- `worker`: Python
-- coordination: shared filesystem, not worker HTTP calls
+- `worker`: Python CLI and worker pipeline
+- coordination: filesystem run directories
 
 ## User Flow
 
-1. open the GUI
-2. upload one ChatGPT export ZIP
-3. create a job
-4. open the job detail page
-5. inspect the conversation list
-6. open a conversation timeline
-7. optionally download the ZIP handoff package
+1. run the CLI with one ChatGPT export ZIP or extracted export directory
+2. the CLI creates a run directory
+3. the worker writes status, result, index, timeline, and attachment inventory files
+4. inspect the generated run directory
+5. use the final ZIP handoff package when another LLM or review workflow needs the output
 
 ## Output Model
 
@@ -79,8 +76,8 @@ Future contract work should add explicit `input_snapshot.json` and `fidelity_rep
 
 ## Current scaffold scope
 
-- one ZIP per job
+- one ZIP or extracted export directory per CLI job
 - current-branch-first normalization
 - best-effort text extraction
 - best-effort timeline rendering
-- upload and worker both reject obviously corrupted ZIP files before pretending the export is usable
+- the worker rejects obviously corrupted ZIP files before pretending the export is usable
