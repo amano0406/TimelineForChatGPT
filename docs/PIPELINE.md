@@ -2,11 +2,13 @@
 
 ## 1. Request Creation
 
-The CLI writes `request.json` into a new `job-*` directory under the configured output root.
+For normal operation, the CLI `refresh` command reads configured input roots, fingerprints discovered ZIP files, and skips unchanged inputs.
+
+For changed inputs, the CLI writes `request.json` into a new timestamped `job-*` directory under the configured output root.
 
 ## 2. Worker Execution
 
-The Python worker can process that run immediately through the CLI `process` command, or it can poll output roots for pending jobs whose `status.json` is still `pending`.
+The Python worker can process that run immediately through the CLI `refresh` or `process` command, or it can poll output roots for pending jobs whose `status.json` is still `pending`.
 
 ## 3. Extract
 
@@ -51,3 +53,6 @@ The worker creates `job-....zip` containing:
 - conversation-level failures should not block unrelated conversations
 - run-level failures still write `status.json` and `result.json`
 - `logs/worker.log` is the primary execution trace
+- refresh-level results are recorded in timestamped `refresh-....json` reports
+- the latest refresh result is also written to `refresh-latest.md` for human review
+- unchanged inputs are recorded as `skipped_unchanged` and are not reprocessed unless `--force` is used

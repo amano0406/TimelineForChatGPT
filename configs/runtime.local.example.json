@@ -8,28 +8,26 @@
   },
   "inputRoots": [
     {
-      "id": "uploads",
-      "displayName": "Uploads",
-      "path": "/shared/uploads",
+      "id": "downloads",
+      "displayName": "Downloads",
+      "path": "C:\\Users\\amano\\Downloads",
       "enabled": true
-    }
-  ],
-  "outputRoots": [
+    },
     {
-      "id": "runs",
-      "displayName": "Runs",
-      "path": "/shared/outputs",
+      "id": "chatgpt-exports",
+      "displayName": "ChatGPT Exports",
+      "path": "D:\\ChatGPTExports",
       "enabled": true
     }
   ],
   "outputRoot": {
     "id": "runs",
     "displayName": "Runs",
-    "path": "/shared/outputs"
+    "path": "C:\\Codex\\workspaces\\TimelineForChatGPT\\outputs"
   },
   "stateRoot": {
     "id": "state",
     "displayName": "Refresh State",
-    "path": "/shared/app-data/state"
+    "path": "C:\\Codex\\workspaces\\TimelineForChatGPT\\state"
   }
 }

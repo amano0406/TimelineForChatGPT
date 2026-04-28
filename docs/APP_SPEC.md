@@ -6,7 +6,7 @@
 
 The system prioritizes:
 
-- simple ZIP-first input
+- fixed input directories for normal refresh operation
 - readable run output
 - local processing
 - a product shape close to `video2timeline`
@@ -18,11 +18,16 @@ The system prioritizes:
 
 ## User Flow
 
-1. run the CLI with one ChatGPT export ZIP or extracted export directory
-2. the CLI creates a run directory
-3. the worker writes status, result, index, timeline, and attachment inventory files
-4. inspect the generated run directory
-5. use the final ZIP handoff package when another LLM or review workflow needs the output
+1. keep input directories and output/state roots in config
+2. run `refresh`
+3. the CLI scans configured input directories
+4. unchanged inputs are skipped from processing
+5. changed inputs create run directories
+6. the worker writes status, result, index, timeline, and attachment inventory files
+7. inspect the refresh report or generated run directories
+8. use the final ZIP handoff package when another LLM or review workflow needs the output
+
+The direct `process` command remains available for one-off ZIP or extracted export directory processing.
 
 ## Output Model
 
@@ -62,6 +67,12 @@ LLM export writes:
 - `llm/conversation_index.jsonl`
 - `llm/conversation_corpus-YYYY-MM.jsonl`
 
+Every refresh writes:
+
+- `refresh-<timestamp>.json` in the configured output root
+- `refresh-latest.md` in the configured output root
+- `refresh_state.json` in the configured state root
+
 ## Current contract gaps
 
 The shared Timeline baseline includes `input_snapshot.json` and `fidelity_report.json`.
@@ -76,7 +87,11 @@ Future contract work should add explicit `input_snapshot.json` and `fidelity_rep
 
 ## Current scaffold scope
 
-- one ZIP or extracted export directory per CLI job
+- configured input directories for normal refresh operation
+- one ZIP or extracted export directory per direct CLI job
+- unchanged input skipping based on file fingerprint state
+- local config example for fixed input/output/state roots
+- config validation for missing input roots and unsafe recursive output/state placement
 - current-branch-first normalization
 - best-effort text extraction
 - best-effort timeline rendering

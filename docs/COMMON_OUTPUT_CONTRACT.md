@@ -30,6 +30,7 @@ Both tools should keep the same top-level run model:
 - the CLI writes `request.json`
 - the worker owns `status.json`, `result.json`, and `manifest.json`
 - the worker also writes human-readable deliverables and a final ZIP
+- refresh-style tools may add a timestamped refresh report above individual run directories
 
 Current naming differs slightly:
 
@@ -197,6 +198,21 @@ Minimum expectation:
 - include human-readable timelines
 - include machine-readable structured outputs
 - include `status.json`, `result.json`, and `manifest.json`
+
+### Refresh report
+
+`TimelineForChatGPT` also supports directory refresh mode.
+That mode writes `refresh-<timestamp>.json` into the configured output root.
+It also writes `refresh-latest.md` for quick human review of the latest run.
+
+The report records:
+
+- configured roots used for the run
+- discovered inputs
+- processed items
+- unchanged skipped items
+- failed items
+- the run directory or previous run directory for each input
 
 ## Stage Naming Guidance
 

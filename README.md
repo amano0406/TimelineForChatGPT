@@ -9,7 +9,8 @@ The product no longer includes a web UI. The Python CLI / worker and generated o
 - `worker`: Python CLI and worker pipeline
 - `docker-compose.yml`: worker-only development/runtime service
 - input:
-  - one ChatGPT export ZIP
+  - configured input directories containing ChatGPT export ZIP files
+  - one ChatGPT export ZIP through the direct `process` command
   - one extracted ChatGPT export directory
 - output:
   - `request.json`
@@ -29,7 +30,42 @@ The product no longer includes a web UI. The Python CLI / worker and generated o
 
 ## CLI Usage
 
-Run from source:
+Refresh configured input directories:
+
+```bash
+cd /mnt/c/apps/TimelineForChatGPT
+PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker refresh --config configs/runtime.defaults.json
+```
+
+`refresh` scans the configured input roots, processes changed ZIP files, and skips unchanged inputs. Each refresh writes a timestamped `refresh-....json` report into the output root.
+
+Create a local config for daily use:
+
+```bash
+cp configs/runtime.local.example.json configs/runtime.local.json
+```
+
+Edit `configs/runtime.local.json` so `inputRoots`, `outputRoot`, and `stateRoot` point to your local folders. `configs/runtime.local.json` is ignored by Git.
+
+After refresh, open:
+
+- `refresh-latest.md`: human-readable latest refresh result
+- `refresh-....json`: timestamped machine-readable refresh result
+- `stateRoot/refresh_state.json`: refresh state used to skip unchanged inputs
+
+Check what would run without processing:
+
+```bash
+PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker refresh --config configs/runtime.local.json --dry-run
+```
+
+Force reprocessing:
+
+```bash
+PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker refresh --config configs/runtime.local.json --force
+```
+
+Run one file directly:
 
 ```bash
 cd /mnt/c/apps/TimelineForChatGPT
@@ -76,7 +112,10 @@ PYTHONPATH=/mnt/c/apps/TimelineForChatGPT/worker/src python3 -m unittest discove
 
 ## Current Limitations
 
-- primary input is one ChatGPT export ZIP or one extracted export directory per CLI job
+- primary refresh input is configured directories containing ChatGPT export ZIP files
+- direct processing still supports one ChatGPT export ZIP or one extracted export directory per CLI job
+- refresh requires at least one enabled input directory that exists
+- recursive refresh rejects output/state folders inside input folders to avoid processing its own outputs
 - timeline rendering is still a best-effort scaffold parser
 - normalized events and segments are still evolving toward the shared timeline contract
 - older ChatGPT export downloads can be corrupted; the worker rejects ZIP files that cannot be opened cleanly

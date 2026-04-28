@@ -7,11 +7,84 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from timeline_for_chatgpt_worker.cli import create_job_from_input
+from timeline_for_chatgpt_worker.cli import create_job_from_input, refresh_from_config
 from timeline_for_chatgpt_worker.processor import process_job
 
 
 class ProcessJobTests(unittest.TestCase):
+    def test_refresh_processes_changed_inputs_and_skips_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            input_root = root / "inputs"
+            output_root = root / "outputs"
+            state_root = root / "state"
+            input_root.mkdir()
+            export_path = input_root / "export.zip"
+            write_sample_export(export_path, conversation_id="conv-refresh", title="Refresh")
+            config_path = root / "runtime.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "allowedExtensions": [".zip"],
+                        "refresh": {"recursive": False, "profile": "timeline-default"},
+                        "inputRoots": [
+                            {
+                                "id": "exports",
+                                "displayName": "Exports",
+                                "path": str(input_root),
+                                "enabled": True,
+                            }
+                        ],
+                        "outputRoot": {"path": str(output_root)},
+                        "stateRoot": {"path": str(state_root)},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            first_report = refresh_from_config(config_path)
+            second_report = refresh_from_config(config_path)
+
+            self.assertEqual(first_report["summary"]["processed"], 1)
+            self.assertEqual(first_report["summary"]["skipped"], 0)
+            self.assertEqual(second_report["summary"]["processed"], 0)
+            self.assertEqual(second_report["summary"]["skipped"], 1)
+            self.assertEqual(second_report["items"][0]["status"], "skipped_unchanged")
+            self.assertTrue((state_root / "refresh_state.json").exists())
+            self.assertTrue(Path(str(first_report["report_path"])).name.startswith("refresh-"))
+            latest_path = output_root / "refresh-latest.md"
+            self.assertEqual(first_report["latest_markdown_path"], str(latest_path))
+            self.assertTrue(latest_path.exists())
+            latest_markdown = latest_path.read_text(encoding="utf-8")
+            self.assertIn("TimelineForChatGPT Refresh", latest_markdown)
+            self.assertIn("skipped_unchanged", latest_markdown)
+
+    def test_refresh_rejects_missing_enabled_input_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "runtime.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "allowedExtensions": [".zip"],
+                        "inputRoots": [
+                            {
+                                "id": "missing",
+                                "displayName": "Missing",
+                                "path": str(root / "missing"),
+                                "enabled": True,
+                            }
+                        ],
+                        "outputRoot": {"path": str(root / "outputs")},
+                        "stateRoot": {"path": str(root / "state")},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "No enabled inputRoots directories exist"):
+                refresh_from_config(config_path)
+
     def test_cli_job_creation_processes_zip_without_copying_input(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -165,6 +238,42 @@ class ProcessJobTests(unittest.TestCase):
                 hashlib.sha256(b"example image bytes").hexdigest(),
             )
             self.assertIsNotNone(attachment["mtime_utc"])
+
+
+def write_sample_export(path: Path, conversation_id: str, title: str) -> None:
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("export_manifest.json", "{}")
+        archive.writestr(
+            "conversations.json",
+            json.dumps(
+                [
+                    {
+                        "id": conversation_id,
+                        "conversation_id": conversation_id,
+                        "title": title,
+                        "create_time": 1767225600,
+                        "update_time": 1767225600,
+                        "current_node": "n1",
+                        "mapping": {
+                            "n1": {
+                                "id": "n1",
+                                "parent": None,
+                                "children": [],
+                                "message": {
+                                    "id": "m1",
+                                    "author": {"role": "user"},
+                                    "create_time": 1767225600,
+                                    "content": {
+                                        "content_type": "text",
+                                        "parts": ["hello from refresh"],
+                                    },
+                                },
+                            }
+                        },
+                    }
+                ]
+            ),
+        )
 
 
 if __name__ == "__main__":

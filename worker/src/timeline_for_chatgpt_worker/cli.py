@@ -6,8 +6,21 @@ import time
 import uuid
 
 from .contracts import InputItem, JobRequest, JobStatus, ParserOptions
-from .fs_utils import ensure_dir, now_iso, slugify, write_json
+from .fs_utils import ensure_dir, load_json, now_iso, slugify, write_json
 from .processor import outputs_root, process_job, process_pending_jobs
+from .refresh import (
+    build_refresh_job_id,
+    build_refresh_report_path,
+    default_config_path,
+    discover_inputs,
+    fingerprint_file,
+    load_refresh_state,
+    load_runtime_config,
+    same_fingerprint,
+    validate_runtime_config,
+    write_refresh_latest_markdown,
+    write_refresh_state,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -20,6 +33,11 @@ def build_parser() -> argparse.ArgumentParser:
     process.add_argument("--profile", default="timeline-default")
     process.add_argument("--job-id", help="Optional explicit job id. Defaults to a generated job id.")
     process.add_argument("--enqueue-only", action="store_true", help="Create request/status files without processing.")
+
+    refresh = subparsers.add_parser("refresh", help="Scan configured input roots and process changed exports.")
+    refresh.add_argument("--config", default=str(default_config_path()), help="Runtime config JSON path.")
+    refresh.add_argument("--dry-run", action="store_true", help="Write a refresh report without processing jobs.")
+    refresh.add_argument("--force", action="store_true", help="Process every discovered input even when unchanged.")
 
     daemon = subparsers.add_parser("daemon", help="Poll for pending jobs.")
     daemon.add_argument("--poll-interval", type=int, default=5)
@@ -44,6 +62,15 @@ def main(argv: list[str] | None = None) -> int:
         print(run_dir)
         return 0
 
+    if args.command == "refresh":
+        report = refresh_from_config(
+            config_path=Path(args.config),
+            dry_run=bool(args.dry_run),
+            force=bool(args.force),
+        )
+        print(report["report_path"])
+        return 0
+
     if args.command == "run-once":
         process_pending_jobs()
         return 0
@@ -58,6 +85,7 @@ def create_job_from_input(
     output_root: Path,
     profile: str,
     job_id: str | None = None,
+    source_id: str = "cli",
 ) -> Path:
     source_path = input_path.expanduser().resolve()
     if not source_path.exists():
@@ -86,7 +114,7 @@ def create_job_from_input(
             InputItem(
                 input_id="input-0001",
                 source_kind=source_kind,
-                source_id="cli",
+                source_id=source_id,
                 original_path=str(source_path),
                 display_name=source_path.name,
                 size_bytes=source_path.stat().st_size if source_path.is_file() else 0,
@@ -105,6 +133,132 @@ def create_job_from_input(
     write_json(run_dir / "request.json", request_to_dict(request))
     write_json(run_dir / "status.json", status.to_dict())
     return run_dir
+
+
+def refresh_from_config(config_path: Path, dry_run: bool = False, force: bool = False) -> dict[str, object]:
+    config = load_runtime_config(config_path)
+    warnings = validate_runtime_config(config)
+    started_at = now_iso()
+    ensure_dir(config.output_root)
+    ensure_dir(config.state_root)
+    state = load_refresh_state(config.state_root)
+    state_items = state.setdefault("items", {})
+    report_items: list[dict[str, object]] = []
+    processed = 0
+    skipped = 0
+    failed = 0
+
+    for input_root, input_path in discover_inputs(config):
+        key = str(input_path)
+        previous = state_items.get(key) if isinstance(state_items.get(key), dict) else {}
+        fingerprint = fingerprint_file(input_path, previous)
+        previous_fingerprint = (previous or {}).get("fingerprint") or {}
+        previous_state = str((previous or {}).get("result_state") or "")
+        previous_run_dir = Path(str((previous or {}).get("run_dir") or ""))
+        unchanged = same_fingerprint(fingerprint, previous_fingerprint)
+        can_skip = (
+            unchanged
+            and not force
+            and previous_state in {"completed", "failed"}
+            and previous_run_dir.exists()
+        )
+
+        if can_skip:
+            skipped += 1
+            report_items.append(
+                {
+                    "input_root_id": input_root.root_id,
+                    "input_path": str(input_path),
+                    "status": "skipped_unchanged",
+                    "previous_run_dir": str(previous_run_dir),
+                    "result_state": previous_state,
+                    "fingerprint": fingerprint,
+                }
+            )
+            continue
+
+        job_id = build_refresh_job_id(input_root.root_id, input_path, fingerprint, started_at)
+        if dry_run:
+            skipped += 1
+            report_items.append(
+                {
+                    "input_root_id": input_root.root_id,
+                    "input_path": str(input_path),
+                    "status": "would_process",
+                    "job_id": job_id,
+                    "fingerprint": fingerprint,
+                }
+            )
+            continue
+
+        run_dir = create_job_from_input(
+            input_path=input_path,
+            output_root=config.output_root,
+            profile=config.profile,
+            job_id=job_id,
+            source_id=input_root.root_id,
+        )
+        process_job(run_dir)
+        status_payload = load_json(run_dir / "status.json")
+        result_payload = load_json(run_dir / "result.json")
+        result_state = str(result_payload.get("state") or status_payload.get("state") or "unknown")
+        if result_state == "completed":
+            processed += 1
+        else:
+            failed += 1
+
+        state_items[key] = {
+            "input_root_id": input_root.root_id,
+            "input_path": str(input_path),
+            "display_name": input_path.name,
+            "fingerprint": fingerprint,
+            "run_dir": str(run_dir),
+            "job_id": job_id,
+            "result_state": result_state,
+            "updated_at": now_iso(),
+        }
+        report_items.append(
+            {
+                "input_root_id": input_root.root_id,
+                "input_path": str(input_path),
+                "status": result_state,
+                "run_dir": str(run_dir),
+                "job_id": job_id,
+                "fingerprint": fingerprint,
+                "message": status_payload.get("message"),
+            }
+        )
+
+    completed_at = now_iso()
+    state["updated_at"] = completed_at
+    if not dry_run:
+        write_refresh_state(config.state_root, state)
+
+    report_path = build_refresh_report_path(config.output_root, started_at)
+    report = {
+        "schema_version": 1,
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "config_path": str(config_path),
+        "output_root": str(config.output_root),
+        "state_root": str(config.state_root),
+        "dry_run": dry_run,
+        "force": force,
+        "warnings": warnings,
+        "summary": {
+            "discovered": len(report_items),
+            "processed": processed,
+            "skipped": skipped,
+            "failed": failed,
+        },
+        "items": report_items,
+        "report_path": str(report_path),
+    }
+    latest_path = config.output_root / "refresh-latest.md"
+    report["latest_markdown_path"] = str(latest_path)
+    write_json(report_path, report)
+    write_refresh_latest_markdown(config.output_root, report)
+    return report
 
 
 def build_job_id(source_path: Path) -> str:
