@@ -1,24 +1,28 @@
 # TimelineForChatGPT
 
-Local-first CLI tool that turns ChatGPT export ZIP files into timeline-oriented artifacts.
+Local-first Docker CLI tool that turns ChatGPT export ZIP files into timeline-oriented artifacts.
 
 The product no longer includes a web UI. The Python CLI / worker and generated output files are the source of truth.
+Normal CLI execution is Docker-only. Host Python execution is blocked unless `TIMELINE_FOR_CHATGPT_ALLOW_HOST_CLI=1` is set for tests.
 
 ## Current Scope
 
 - `worker`: Python CLI and worker pipeline
 - `docker-compose.yml`: worker-only development/runtime service
+- `scripts/*.ps1`: primary Windows PowerShell entrypoints for Docker commands
 - input:
   - configured input directories containing ChatGPT export ZIP files
-  - one ChatGPT export ZIP through the direct `process` command
+  - one ChatGPT export ZIP through the Docker CLI `process` command
   - one extracted ChatGPT export directory
 - output:
   - `request.json`
   - `status.json`
   - `result.json`
   - `manifest.json`
+  - `logs/worker.log`
   - `export_summary.json`
   - `conversation_index.jsonl`
+  - `conversations/<id>/conversation.json`
   - `conversations/<id>/timeline.md`
   - `conversations/<id>/events.jsonl`
   - `conversations/<id>/segments.json`
@@ -26,15 +30,51 @@ The product no longer includes a web UI. The Python CLI / worker and generated o
   - `conversations/<id>/attachments.json`
   - `llm/conversation_index.jsonl`
   - `llm/conversation_corpus-YYYY-MM.jsonl`
+  - `llm/README.md`
   - `job-....zip`
 
-## CLI Usage
+## Quick Start
+
+For normal Windows use, run the PowerShell scripts from the repo root:
+
+```powershell
+cd C:\apps\TimelineForChatGPT
+.\scripts\settings-init.ps1
+.\scripts\config-check.ps1
+.\scripts\refresh.ps1
+```
+
+The scripts create `data\inputs`, `data\outputs`, and `data\state` if they do not exist. Most scripts also create `settings.json` from `settings.example.json` when `settings.json` is missing. Existing settings are not overwritten. Put ChatGPT export ZIP files under `data\inputs`, then run `.\scripts\refresh.ps1`.
+
+After refresh, open:
+
+- `data\outputs\index.md`: catalog of known inputs and latest successful outputs
+- `data\outputs\refresh-latest.md`: latest refresh result
+- `data\outputs\job-...\`: generated per-export run directory
+
+Common scripts:
+
+- `scripts\build.ps1`: build the Docker worker image
+- `scripts\settings-init.ps1`: create `settings.json` if it does not exist
+- `scripts\config-check.ps1`: validate settings without processing
+- `scripts\refresh-dry-run.ps1`: preview what would run
+- `scripts\refresh.ps1`: process changed inputs
+- `scripts\refresh-force.ps1`: reprocess all discovered inputs
+- `scripts\process-input.ps1 chatgpt-export.zip`: process one ZIP placed under `data\inputs`
+- `scripts\daemon.ps1`: run the polling worker
+- `scripts\test.ps1`: run unit tests inside Docker
+
+`*.bat` wrappers are kept for cmd.exe compatibility, but PowerShell is the canonical Windows entrypoint.
+
+## WSL / Advanced Docker CLI Usage
+
+This path is kept as a backdoor for WSL and developer workflows. For normal Windows use, prefer the PowerShell scripts above.
 
 Refresh configured input directories:
 
 ```bash
 cd /mnt/c/apps/TimelineForChatGPT
-PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker refresh
+docker compose run --rm worker refresh
 ```
 
 `refresh` scans the configured input roots, processes changed ZIP files, and skips unchanged inputs. Each refresh writes a timestamped `refresh-....json` report into the output root.
@@ -42,10 +82,12 @@ PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker refresh
 Create a local config for daily use:
 
 ```bash
-PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker settings init
+docker compose run --rm worker settings init
 ```
 
-This creates `settings.json` from `settings.example.json` when `settings.json` does not exist. Edit `settings.json` so `inputRoots`, `outputRoot`, and `stateRoot` point to your local folders. `settings.json` is ignored by Git.
+This creates `settings.json` from `settings.example.json` when `settings.json` does not exist. Edit `settings.json` so `inputRoots`, `outputRoot`, and `stateRoot` point to folders visible inside the Docker container. The default example uses `data/inputs`, `data/outputs`, and `data/state` under this repo. `settings.json` and `data/` are ignored by Git.
+
+For WSL and non-Windows shells, use Docker Compose directly.
 
 After refresh, open:
 
@@ -58,26 +100,26 @@ After refresh, open:
 Check what would run without processing:
 
 ```bash
-PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker refresh --dry-run
+docker compose run --rm worker refresh --dry-run
 ```
 
 Check the config without processing:
 
 ```bash
-PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker config-check
+docker compose run --rm worker config-check
 ```
 
 Force reprocessing:
 
 ```bash
-PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker refresh --force
+docker compose run --rm worker refresh --force
 ```
 
 Run one file directly:
 
 ```bash
 cd /mnt/c/apps/TimelineForChatGPT
-PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker process /path/to/chatgpt-export.zip --output-root /tmp/timelineforchatgpt-outputs
+docker compose run --rm worker process /workspace/data/inputs/chatgpt-export.zip --output-root /workspace/data/outputs
 ```
 
 The command prints the run directory. The original export file is read in place; it is not deleted, overwritten, moved, or renamed.
@@ -85,13 +127,13 @@ The command prints the run directory. The original export file is read in place;
 Process existing queued jobs:
 
 ```bash
-PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker run-once
+docker compose run --rm worker run-once
 ```
 
 Run the polling worker:
 
 ```bash
-PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker daemon
+docker compose up worker
 ```
 
 ## Docker
@@ -108,20 +150,43 @@ Run the worker daemon:
 docker compose up
 ```
 
-There is no browser URL or exposed port. The compose file only runs the worker container and shared local volumes.
+There is no browser URL or exposed port. The compose file only runs the worker container and local bind mounts under `data/`.
+
+Common one-off commands:
+
+```bash
+docker compose run --rm worker settings init
+docker compose run --rm worker config-check
+docker compose run --rm worker refresh --dry-run
+docker compose run --rm worker refresh
+```
+
+Host Python CLI execution is intentionally blocked:
+
+```bash
+PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker refresh
+```
+
+Use Docker for normal operation. Set `TIMELINE_FOR_CHATGPT_ALLOW_HOST_CLI=1` only for unit tests or intentional local test harnesses.
 
 ## Validation
 
 Worker unit tests:
 
+```powershell
+.\scripts\test.ps1
+```
+
+The host Python test command remains available only for development or CI harnesses that intentionally opt out of Docker-only CLI execution:
+
 ```bash
-PYTHONPATH=/mnt/c/apps/TimelineForChatGPT/worker/src python3 -m unittest discover -s /mnt/c/apps/TimelineForChatGPT/worker/tests -v
+TIMELINE_FOR_CHATGPT_ALLOW_HOST_CLI=1 PYTHONPATH=/mnt/c/apps/TimelineForChatGPT/worker/src python3 -m unittest discover -s /mnt/c/apps/TimelineForChatGPT/worker/tests -v
 ```
 
 ## Current Limitations
 
 - primary refresh input is configured directories containing ChatGPT export ZIP files
-- direct processing still supports one ChatGPT export ZIP or one extracted export directory per CLI job
+- Docker CLI processing still supports one ChatGPT export ZIP or one extracted export directory per job
 - refresh requires at least one enabled input directory that exists
 - recursive refresh rejects output/state folders inside input folders to avoid processing its own outputs
 - refresh uses `stateRoot/refresh.lock` to avoid overlapping refresh runs
@@ -170,5 +235,6 @@ Those invalid files still start with a ZIP local header, but they miss the end-o
 configs/
 docker/
 docs/
+scripts/
 worker/
 ```

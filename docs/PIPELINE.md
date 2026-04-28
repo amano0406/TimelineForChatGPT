@@ -2,14 +2,17 @@
 
 ## 1. Request Creation
 
-For normal operation, the CLI `refresh` command reads configured input roots, fingerprints discovered ZIP files, and skips unchanged inputs.
+For normal Windows operation, the PowerShell `scripts/refresh.ps1` entrypoint invokes the Docker CLI `refresh` command.
+That command reads configured input roots, fingerprints discovered ZIP files, and skips unchanged inputs.
 It also rejects overlapping refresh runs with `stateRoot/refresh.lock`.
 
-For changed inputs, the CLI writes `request.json` into a new timestamped `job-*` directory under the configured output root.
+For changed inputs, the Docker CLI writes `request.json` into a new timestamped `job-*` directory under the configured output root.
+Direct `docker compose ...` usage remains available as the WSL/developer backdoor.
 
 ## 2. Worker Execution
 
-The Python worker can process that run immediately through the CLI `refresh` or `process` command, or it can poll output roots for pending jobs whose `status.json` is still `pending`.
+The Python worker can process that run immediately through the Docker CLI `refresh` or `process` command, or it can poll output roots for pending jobs whose `status.json` is still `pending`.
+Host Python CLI execution is blocked for normal operation and is only allowed when `TIMELINE_FOR_CHATGPT_ALLOW_HOST_CLI=1` is set for tests.
 
 ## 3. Extract
 

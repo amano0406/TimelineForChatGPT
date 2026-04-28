@@ -13,14 +13,16 @@ The system prioritizes:
 
 ## App Model
 
-- `worker`: Python CLI and worker pipeline
+- `worker`: Docker CLI and Python worker pipeline
+- primary Windows entrypoint: PowerShell scripts under `scripts/*.ps1`
+- WSL/developer backdoor: direct `docker compose ...` commands
 - coordination: filesystem run directories
 
 ## User Flow
 
 1. keep input directories and output/state roots in config
-2. run `refresh`
-3. the CLI scans configured input directories
+2. run `.\scripts\refresh.ps1` from PowerShell
+3. the script invokes the Docker CLI to scan configured input directories
 4. unchanged inputs are skipped from processing
 5. duplicate input content is skipped inside the same refresh
 6. inputs missing from the configured folders are reported without deleting old outputs
@@ -29,7 +31,7 @@ The system prioritizes:
 9. inspect the refresh report or generated run directories
 10. use the final ZIP handoff package when another LLM or review workflow needs the output
 
-The direct `process` command remains available for one-off ZIP or extracted export directory processing.
+The Docker CLI `process` command remains available for one-off ZIP or extracted export directory processing.
 The `config-check` command validates the configured roots without processing inputs.
 
 ## Output Model
@@ -40,8 +42,7 @@ Every run writes:
 - `status.json`
 - `result.json`
 - `manifest.json`
-- `RUN_INFO.md`
-- `NOTICE.md`
+- `logs/worker.log`
 - `export_summary.json`
 - `conversation_index.jsonl`
 
@@ -69,6 +70,7 @@ LLM export writes:
 
 - `llm/conversation_index.jsonl`
 - `llm/conversation_corpus-YYYY-MM.jsonl`
+- `llm/README.md`
 
 Every refresh writes:
 
@@ -86,14 +88,14 @@ Current equivalents are partial:
 
 - input identity is recorded in `request.json`
 - input summary is recorded in `export_summary.json`
-- parser limitations are documented in `NOTICE.md`, README limitations, and timeline metadata
+- parser limitations are documented in README limitations, worker logs, result warnings, and timeline metadata
 
 Future contract work should add explicit `input_snapshot.json` and `fidelity_report.json` without removing the current files.
 
 ## Current scaffold scope
 
 - configured input directories for normal refresh operation
-- one ZIP or extracted export directory per direct CLI job
+- one ZIP or extracted export directory per Docker CLI job
 - unchanged input skipping based on file fingerprint state
 - duplicate input skipping based on ZIP content hash
 - missing input reporting for state entries no longer present on disk

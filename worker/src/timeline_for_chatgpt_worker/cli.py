@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
+import sys
 import time
 import uuid
 
@@ -26,6 +28,9 @@ from .refresh import (
     write_refresh_latest_markdown,
     write_refresh_state,
 )
+
+HOST_CLI_ALLOW_ENV = "TIMELINE_FOR_CHATGPT_ALLOW_HOST_CLI"
+DOCKER_RUNTIME_ENV = "TIMELINE_FOR_CHATGPT_DOCKER"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -63,6 +68,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    guard_message = docker_only_cli_guard_message()
+    if guard_message:
+        print(guard_message, file=sys.stderr)
+        return 2
+
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -107,6 +117,23 @@ def main(argv: list[str] | None = None) -> int:
     while True:
         process_pending_jobs()
         time.sleep(max(1, int(args.poll_interval)))
+
+
+def docker_only_cli_guard_message(is_docker_file: bool | None = None) -> str | None:
+    detected_docker_file = Path("/.dockerenv").exists() if is_docker_file is None else is_docker_file
+    if truthy_env(DOCKER_RUNTIME_ENV) or detected_docker_file:
+        return None
+    if truthy_env(HOST_CLI_ALLOW_ENV):
+        return None
+    return (
+        "TimelineForChatGPT CLI is Docker-only. "
+        "Run it with `docker compose run --rm worker <command>`, "
+        f"or set {HOST_CLI_ALLOW_ENV}=1 for tests only."
+    )
+
+
+def truthy_env(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def resolve_settings_arg(args: argparse.Namespace) -> Path:

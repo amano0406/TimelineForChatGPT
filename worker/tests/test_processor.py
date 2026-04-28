@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import json
 import hashlib
 import shutil
@@ -7,13 +8,32 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
-from timeline_for_chatgpt_worker.cli import create_job_from_input, main, refresh_from_config
+from timeline_for_chatgpt_worker.cli import (
+    create_job_from_input,
+    docker_only_cli_guard_message,
+    main,
+    refresh_from_config,
+)
 from timeline_for_chatgpt_worker.processor import process_job
 from timeline_for_chatgpt_worker.refresh import build_config_check
 
 
 class ProcessJobTests(unittest.TestCase):
+    def test_cli_rejects_host_execution_without_explicit_test_override(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "TIMELINE_FOR_CHATGPT_DOCKER": "",
+                "TIMELINE_FOR_CHATGPT_ALLOW_HOST_CLI": "",
+            },
+        ):
+            self.assertIn(
+                "Docker-only",
+                docker_only_cli_guard_message(is_docker_file=False) or "",
+            )
+
     def test_settings_init_creates_settings_from_example(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -34,16 +54,17 @@ class ProcessJobTests(unittest.TestCase):
             }
             example_path.write_text(json.dumps(example_payload), encoding="utf-8")
 
-            exit_code = main(
-                [
-                    "settings",
-                    "init",
-                    "--settings",
-                    str(settings_path),
-                    "--example",
-                    str(example_path),
-                ]
-            )
+            with patch.dict(os.environ, {"TIMELINE_FOR_CHATGPT_ALLOW_HOST_CLI": "1"}):
+                exit_code = main(
+                    [
+                        "settings",
+                        "init",
+                        "--settings",
+                        str(settings_path),
+                        "--example",
+                        str(example_path),
+                    ]
+                )
 
             self.assertEqual(exit_code, 0)
             self.assertTrue(settings_path.exists())
