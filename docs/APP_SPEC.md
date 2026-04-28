@@ -22,12 +22,15 @@ The system prioritizes:
 2. run `refresh`
 3. the CLI scans configured input directories
 4. unchanged inputs are skipped from processing
-5. changed inputs create run directories
-6. the worker writes status, result, index, timeline, and attachment inventory files
-7. inspect the refresh report or generated run directories
-8. use the final ZIP handoff package when another LLM or review workflow needs the output
+5. duplicate input content is skipped inside the same refresh
+6. inputs missing from the configured folders are reported without deleting old outputs
+7. changed inputs create run directories
+8. the worker writes status, result, index, timeline, and attachment inventory files
+9. inspect the refresh report or generated run directories
+10. use the final ZIP handoff package when another LLM or review workflow needs the output
 
 The direct `process` command remains available for one-off ZIP or extracted export directory processing.
+The `config-check` command validates the configured roots without processing inputs.
 
 ## Output Model
 
@@ -69,6 +72,8 @@ LLM export writes:
 
 Every refresh writes:
 
+- `index.json` in the configured output root
+- `index.md` in the configured output root
 - `refresh-<timestamp>.json` in the configured output root
 - `refresh-latest.md` in the configured output root
 - `refresh_state.json` in the configured state root
@@ -90,6 +95,11 @@ Future contract work should add explicit `input_snapshot.json` and `fidelity_rep
 - configured input directories for normal refresh operation
 - one ZIP or extracted export directory per direct CLI job
 - unchanged input skipping based on file fingerprint state
+- duplicate input skipping based on ZIP content hash
+- missing input reporting for state entries no longer present on disk
+- refresh lock file to reject overlapping refresh runs
+- refresh index files for known inputs and latest successful outputs
+- refresh timing for discovery, fingerprinting, processing, and total duration
 - local config example for fixed input/output/state roots
 - config validation for missing input roots and unsafe recursive output/state placement
 - current-branch-first normalization

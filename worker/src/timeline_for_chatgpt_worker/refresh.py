@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import os
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from .fs_utils import ensure_dir, load_json, now_iso, slugify, write_json
 
@@ -27,17 +28,34 @@ class RuntimeConfig:
     profile: str = "timeline-default"
 
 
-def default_config_path() -> Path:
-    configured = os.environ.get("TIMELINE_FOR_CHATGPT_RUNTIME_DEFAULTS")
+def default_settings_path() -> Path:
+    configured = os.environ.get("TIMELINE_FOR_CHATGPT_SETTINGS")
     if configured:
         return Path(configured)
-    return Path("configs/runtime.defaults.json")
+    return Path("settings.json")
+
+
+def settings_example_path(settings_path: Path | None = None) -> Path:
+    base = settings_path or default_settings_path()
+    return base.expanduser().resolve().parent / "settings.example.json"
+
+
+def init_settings(settings_path: Path | None = None, example_path: Path | None = None) -> Path:
+    destination = (settings_path or default_settings_path()).expanduser()
+    source = (example_path or settings_example_path(destination)).expanduser()
+    if destination.exists():
+        return destination
+    if not source.exists():
+        raise FileNotFoundError(f"settings example does not exist: {source}")
+    ensure_dir(destination.parent)
+    destination.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    return destination
 
 
 def load_runtime_config(path: Path | None = None) -> RuntimeConfig:
-    config_path = (path or default_config_path()).expanduser()
-    payload = load_json(config_path)
-    base_dir = config_path.parent
+    settings_path = (path or default_settings_path()).expanduser()
+    payload = load_json(settings_path)
+    base_dir = settings_path.parent
 
     allowed_extensions = [
         normalize_extension(value)
@@ -111,6 +129,56 @@ def validate_runtime_config(config: RuntimeConfig) -> list[str]:
                 )
 
     return warnings
+
+
+def build_config_check(config_path: Path | None = None) -> dict[str, Any]:
+    config = load_runtime_config(config_path)
+    warnings = validate_runtime_config(config)
+    discovered = discover_inputs(config)
+    return {
+        "schema_version": 1,
+        "checked_at": now_iso(),
+        "settings_path": str(config_path or default_settings_path()),
+        "config_path": str(config_path or default_settings_path()),
+        "output_root": str(config.output_root),
+        "state_root": str(config.state_root),
+        "recursive": config.recursive,
+        "profile": config.profile,
+        "allowed_extensions": config.allowed_extensions,
+        "warnings": warnings,
+        "input_roots": [
+            {
+                "id": input_root.root_id,
+                "display_name": input_root.display_name,
+                "path": str(input_root.path),
+                "enabled": input_root.enabled,
+                "exists": input_root.path.exists(),
+                "is_dir": input_root.path.is_dir(),
+            }
+            for input_root in config.input_roots
+        ],
+        "processable_input_count": len(discovered),
+    }
+
+
+@contextmanager
+def refresh_lock(state_root: Path) -> Iterator[Path]:
+    ensure_dir(state_root)
+    lock_path = state_root / "refresh.lock"
+    try:
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError as exc:
+        raise RuntimeError(f"Refresh is already running or a stale lock exists: {lock_path}") from exc
+
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(f"pid={os.getpid()}\ncreated_at={now_iso()}\n")
+    try:
+        yield lock_path
+    finally:
+        try:
+            lock_path.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def ensure_writable_dir(path: Path, label: str) -> None:
@@ -260,6 +328,8 @@ def build_refresh_latest_markdown(report: dict[str, Any]) -> str:
         f"- Processed: `{summary.get('processed', 0)}`",
         f"- Skipped: `{summary.get('skipped', 0)}`",
         f"- Failed: `{summary.get('failed', 0)}`",
+        f"- Missing from input: `{summary.get('missing', 0)}`",
+        f"- Duplicates: `{summary.get('duplicates', 0)}`",
         f"- Dry run: `{report.get('dry_run', False)}`",
         f"- Force: `{report.get('force', False)}`",
         f"- Output root: `{report.get('output_root') or '-'}`",
@@ -292,6 +362,10 @@ def build_refresh_latest_markdown(report: dict[str, Any]) -> str:
             lines.append(f"- Run: `{item['run_dir']}`")
         if item.get("previous_run_dir"):
             lines.append(f"- Previous run: `{item['previous_run_dir']}`")
+        if item.get("duplicate_of"):
+            lines.append(f"- Duplicate of: `{item['duplicate_of']}`")
+        if item.get("duplicate_run_dir"):
+            lines.append(f"- Duplicate run: `{item['duplicate_run_dir']}`")
         if item.get("result_state"):
             lines.append(f"- Previous result: `{item['result_state']}`")
         if item.get("message"):
@@ -309,6 +383,113 @@ def write_refresh_latest_markdown(output_root: Path, report: dict[str, Any]) -> 
     path = output_root / "refresh-latest.md"
     path.write_text(build_refresh_latest_markdown(report), encoding="utf-8")
     return path
+
+
+def build_refresh_index(state: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
+    state_items = state.get("items") if isinstance(state.get("items"), dict) else {}
+    report_items = report.get("items") if isinstance(report.get("items"), list) else []
+    report_by_path = {
+        str(item.get("input_path")): item
+        for item in report_items
+        if isinstance(item, dict) and item.get("input_path")
+    }
+
+    rows: list[dict[str, Any]] = []
+    for input_path, state_item in sorted(state_items.items()):
+        if not isinstance(state_item, dict):
+            continue
+        report_item = report_by_path.get(str(input_path), {})
+        rows.append(
+            {
+                "input_path": input_path,
+                "input_root_id": state_item.get("input_root_id"),
+                "display_name": state_item.get("display_name"),
+                "result_state": state_item.get("result_state"),
+                "job_id": state_item.get("job_id"),
+                "run_dir": state_item.get("run_dir"),
+                "updated_at": state_item.get("updated_at"),
+                "latest_success_job_id": state_item.get("latest_success_job_id"),
+                "latest_success_run_dir": state_item.get("latest_success_run_dir"),
+                "latest_success_at": state_item.get("latest_success_at"),
+                "latest_refresh_status": report_item.get("status"),
+                "fingerprint": state_item.get("fingerprint"),
+            }
+        )
+
+    latest_success_count = sum(1 for row in rows if row.get("latest_success_run_dir"))
+    failed_count = sum(1 for row in rows if row.get("result_state") == "failed")
+    return {
+        "schema_version": 1,
+        "generated_at": now_iso(),
+        "latest_refresh_report_path": report.get("report_path"),
+        "latest_refresh_started_at": report.get("started_at"),
+        "latest_refresh_completed_at": report.get("completed_at"),
+        "latest_refresh_summary": report.get("summary"),
+        "total_known_inputs": len(rows),
+        "latest_success_count": latest_success_count,
+        "failed_count": failed_count,
+        "items": rows,
+    }
+
+
+def build_refresh_index_markdown(index: dict[str, Any]) -> str:
+    summary = index.get("latest_refresh_summary") if isinstance(index.get("latest_refresh_summary"), dict) else {}
+    items = index.get("items") if isinstance(index.get("items"), list) else []
+    lines = [
+        "# TimelineForChatGPT Index",
+        "",
+        "## Latest Refresh",
+        "",
+        f"- Started: `{index.get('latest_refresh_started_at') or '-'}`",
+        f"- Completed: `{index.get('latest_refresh_completed_at') or '-'}`",
+        f"- Report: `{index.get('latest_refresh_report_path') or '-'}`",
+        f"- Discovered: `{summary.get('discovered', 0)}`",
+        f"- Processed: `{summary.get('processed', 0)}`",
+        f"- Skipped: `{summary.get('skipped', 0)}`",
+        f"- Failed: `{summary.get('failed', 0)}`",
+        f"- Missing: `{summary.get('missing', 0)}`",
+        f"- Duplicates: `{summary.get('duplicates', 0)}`",
+        "",
+        "## Known Inputs",
+        "",
+        f"- Total known inputs: `{index.get('total_known_inputs', 0)}`",
+        f"- Latest successful outputs: `{index.get('latest_success_count', 0)}`",
+        f"- Latest failed inputs: `{index.get('failed_count', 0)}`",
+        "",
+    ]
+    if not items:
+        lines.extend(["No inputs have been processed yet.", ""])
+        return "\n".join(lines)
+
+    for item in items:
+        title = item.get("display_name") or item.get("input_path") or "input"
+        lines.append(f"### {title}")
+        lines.append("")
+        lines.append(f"- Input: `{item.get('input_path') or '-'}`")
+        if item.get("input_root_id"):
+            lines.append(f"- Input root: `{item['input_root_id']}`")
+        if item.get("latest_refresh_status"):
+            lines.append(f"- Latest refresh status: `{item['latest_refresh_status']}`")
+        if item.get("result_state"):
+            lines.append(f"- Latest result: `{item['result_state']}`")
+        if item.get("run_dir"):
+            lines.append(f"- Latest run: `{item['run_dir']}`")
+        if item.get("latest_success_run_dir"):
+            lines.append(f"- Latest successful run: `{item['latest_success_run_dir']}`")
+        if item.get("updated_at"):
+            lines.append(f"- Updated: `{item['updated_at']}`")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def write_refresh_index(output_root: Path, state: dict[str, Any], report: dict[str, Any]) -> tuple[Path, Path]:
+    index = build_refresh_index(state, report)
+    json_path = output_root / "index.json"
+    markdown_path = output_root / "index.md"
+    write_json(json_path, index)
+    markdown_path.write_text(build_refresh_index_markdown(index), encoding="utf-8")
+    return json_path, markdown_path
 
 
 def build_refresh_job_id(root_id: str, source_path: Path, fingerprint: dict[str, Any], started_at: str) -> str:

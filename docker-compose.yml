@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: docker/worker.Dockerfile
     environment:
-      TIMELINE_FOR_CHATGPT_RUNTIME_DEFAULTS: /app/config/runtime.defaults.json
+      TIMELINE_FOR_CHATGPT_SETTINGS: /app/settings.example.json
       TIMELINE_FOR_CHATGPT_APPDATA_ROOT: /shared/app-data
       TIMELINE_FOR_CHATGPT_UPLOADS_ROOT: /shared/uploads
       TIMELINE_FOR_CHATGPT_OUTPUTS_ROOT: /shared/outputs

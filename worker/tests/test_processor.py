@@ -2,16 +2,56 @@ from __future__ import annotations
 
 import json
 import hashlib
+import shutil
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
 
-from timeline_for_chatgpt_worker.cli import create_job_from_input, refresh_from_config
+from timeline_for_chatgpt_worker.cli import create_job_from_input, main, refresh_from_config
 from timeline_for_chatgpt_worker.processor import process_job
+from timeline_for_chatgpt_worker.refresh import build_config_check
 
 
 class ProcessJobTests(unittest.TestCase):
+    def test_settings_init_creates_settings_from_example(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            settings_path = root / "settings.json"
+            example_path = root / "settings.example.json"
+            example_payload = {
+                "allowedExtensions": [".zip"],
+                "inputRoots": [
+                    {
+                        "id": "exports",
+                        "displayName": "Exports",
+                        "path": str(root / "inputs"),
+                        "enabled": True,
+                    }
+                ],
+                "outputRoot": {"path": str(root / "outputs")},
+                "stateRoot": {"path": str(root / "state")},
+            }
+            example_path.write_text(json.dumps(example_payload), encoding="utf-8")
+
+            exit_code = main(
+                [
+                    "settings",
+                    "init",
+                    "--settings",
+                    str(settings_path),
+                    "--example",
+                    str(example_path),
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(settings_path.exists())
+            self.assertEqual(
+                json.loads(settings_path.read_text(encoding="utf-8")),
+                example_payload,
+            )
+
     def test_refresh_processes_changed_inputs_and_skips_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -49,6 +89,8 @@ class ProcessJobTests(unittest.TestCase):
             self.assertEqual(first_report["summary"]["skipped"], 0)
             self.assertEqual(second_report["summary"]["processed"], 0)
             self.assertEqual(second_report["summary"]["skipped"], 1)
+            self.assertEqual(second_report["summary"]["missing"], 0)
+            self.assertEqual(second_report["summary"]["duplicates"], 0)
             self.assertEqual(second_report["items"][0]["status"], "skipped_unchanged")
             self.assertTrue((state_root / "refresh_state.json").exists())
             self.assertTrue(Path(str(first_report["report_path"])).name.startswith("refresh-"))
@@ -58,6 +100,82 @@ class ProcessJobTests(unittest.TestCase):
             latest_markdown = latest_path.read_text(encoding="utf-8")
             self.assertIn("TimelineForChatGPT Refresh", latest_markdown)
             self.assertIn("skipped_unchanged", latest_markdown)
+            index_json_path = output_root / "index.json"
+            index_markdown_path = output_root / "index.md"
+            self.assertEqual(first_report["index_json_path"], str(index_json_path))
+            self.assertEqual(first_report["index_markdown_path"], str(index_markdown_path))
+            self.assertTrue(index_json_path.exists())
+            self.assertTrue(index_markdown_path.exists())
+            index = json.loads(index_json_path.read_text(encoding="utf-8"))
+            self.assertEqual(index["total_known_inputs"], 1)
+            self.assertEqual(index["latest_success_count"], 1)
+            self.assertEqual(index["items"][0]["latest_success_run_dir"], index["items"][0]["run_dir"])
+            self.assertIn("duration_seconds", second_report["summary"])
+            self.assertIn("fingerprint_seconds", second_report["items"][0]["timing"])
+
+    def test_config_check_reports_processable_input_count(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            input_root = root / "inputs"
+            input_root.mkdir()
+            write_sample_export(input_root / "export.zip", conversation_id="conv-check", title="Check")
+            config_path = write_runtime_config(root, input_root)
+
+            report = build_config_check(config_path)
+
+            self.assertEqual(report["processable_input_count"], 1)
+            self.assertEqual(report["warnings"], [])
+            self.assertEqual(report["input_roots"][0]["id"], "exports")
+
+    def test_refresh_reports_missing_inputs_without_deleting_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            input_root = root / "inputs"
+            input_root.mkdir()
+            export_path = input_root / "export.zip"
+            write_sample_export(export_path, conversation_id="conv-missing", title="Missing")
+            config_path = write_runtime_config(root, input_root)
+
+            first_report = refresh_from_config(config_path)
+            export_path.unlink()
+            second_report = refresh_from_config(config_path)
+
+            self.assertEqual(first_report["summary"]["processed"], 1)
+            self.assertEqual(second_report["summary"]["missing"], 1)
+            self.assertEqual(second_report["items"][0]["status"], "missing_from_input")
+
+    def test_refresh_skips_duplicate_inputs_by_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            input_root = root / "inputs"
+            input_root.mkdir()
+            first = input_root / "first.zip"
+            second = input_root / "second.zip"
+            write_sample_export(first, conversation_id="conv-duplicate", title="Duplicate")
+            shutil.copyfile(first, second)
+            config_path = write_runtime_config(root, input_root)
+
+            report = refresh_from_config(config_path)
+
+            statuses = [item["status"] for item in report["items"]]
+            self.assertIn("completed", statuses)
+            self.assertIn("duplicate_skipped", statuses)
+            self.assertEqual(report["summary"]["processed"], 1)
+            self.assertEqual(report["summary"]["duplicates"], 1)
+
+    def test_refresh_rejects_existing_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            input_root = root / "inputs"
+            state_root = root / "state"
+            input_root.mkdir()
+            state_root.mkdir()
+            write_sample_export(input_root / "export.zip", conversation_id="conv-lock", title="Lock")
+            config_path = write_runtime_config(root, input_root, state_root=state_root)
+            (state_root / "refresh.lock").write_text("locked", encoding="utf-8")
+
+            with self.assertRaisesRegex(RuntimeError, "Refresh is already running"):
+                refresh_from_config(config_path)
 
     def test_refresh_rejects_missing_enabled_input_roots(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -238,6 +356,32 @@ class ProcessJobTests(unittest.TestCase):
                 hashlib.sha256(b"example image bytes").hexdigest(),
             )
             self.assertIsNotNone(attachment["mtime_utc"])
+
+
+def write_runtime_config(root: Path, input_root: Path, state_root: Path | None = None) -> Path:
+    output_root = root / "outputs"
+    resolved_state_root = state_root or root / "state"
+    config_path = root / "runtime.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "allowedExtensions": [".zip"],
+                "refresh": {"recursive": False, "profile": "timeline-default"},
+                "inputRoots": [
+                    {
+                        "id": "exports",
+                        "displayName": "Exports",
+                        "path": str(input_root),
+                        "enabled": True,
+                    }
+                ],
+                "outputRoot": {"path": str(output_root)},
+                "stateRoot": {"path": str(resolved_state_root)},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return config_path
 
 
 def write_sample_export(path: Path, conversation_id: str, title: str) -> None:

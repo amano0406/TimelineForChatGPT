@@ -34,7 +34,7 @@ Refresh configured input directories:
 
 ```bash
 cd /mnt/c/apps/TimelineForChatGPT
-PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker refresh --config configs/runtime.defaults.json
+PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker refresh
 ```
 
 `refresh` scans the configured input roots, processes changed ZIP files, and skips unchanged inputs. Each refresh writes a timestamped `refresh-....json` report into the output root.
@@ -42,13 +42,15 @@ PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker refresh --config co
 Create a local config for daily use:
 
 ```bash
-cp configs/runtime.local.example.json configs/runtime.local.json
+PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker settings init
 ```
 
-Edit `configs/runtime.local.json` so `inputRoots`, `outputRoot`, and `stateRoot` point to your local folders. `configs/runtime.local.json` is ignored by Git.
+This creates `settings.json` from `settings.example.json` when `settings.json` does not exist. Edit `settings.json` so `inputRoots`, `outputRoot`, and `stateRoot` point to your local folders. `settings.json` is ignored by Git.
 
 After refresh, open:
 
+- `index.md`: human-readable catalog of known inputs and latest successful outputs
+- `index.json`: machine-readable catalog of known inputs and latest successful outputs
 - `refresh-latest.md`: human-readable latest refresh result
 - `refresh-....json`: timestamped machine-readable refresh result
 - `stateRoot/refresh_state.json`: refresh state used to skip unchanged inputs
@@ -56,13 +58,19 @@ After refresh, open:
 Check what would run without processing:
 
 ```bash
-PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker refresh --config configs/runtime.local.json --dry-run
+PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker refresh --dry-run
+```
+
+Check the config without processing:
+
+```bash
+PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker config-check
 ```
 
 Force reprocessing:
 
 ```bash
-PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker refresh --config configs/runtime.local.json --force
+PYTHONPATH=worker/src python3 -m timeline_for_chatgpt_worker refresh --force
 ```
 
 Run one file directly:
@@ -116,6 +124,10 @@ PYTHONPATH=/mnt/c/apps/TimelineForChatGPT/worker/src python3 -m unittest discove
 - direct processing still supports one ChatGPT export ZIP or one extracted export directory per CLI job
 - refresh requires at least one enabled input directory that exists
 - recursive refresh rejects output/state folders inside input folders to avoid processing its own outputs
+- refresh uses `stateRoot/refresh.lock` to avoid overlapping refresh runs
+- refresh reports inputs that disappeared since the last run as `missing_from_input`
+- refresh skips duplicate ZIP contents in the same run as `duplicate_skipped`
+- refresh reports include minimal timing for discovery, fingerprinting, processing, and total duration
 - timeline rendering is still a best-effort scaffold parser
 - normalized events and segments are still evolving toward the shared timeline contract
 - older ChatGPT export downloads can be corrupted; the worker rejects ZIP files that cannot be opened cleanly

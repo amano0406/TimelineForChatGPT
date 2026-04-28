@@ -7,10 +7,17 @@ Local Python worker that polls pending jobs, parses ChatGPT export ZIP files, an
 Refresh configured input directories:
 
 ```bash
-PYTHONPATH=src python3 -m timeline_for_chatgpt_worker refresh --config ../configs/runtime.defaults.json
+PYTHONPATH=src python3 -m timeline_for_chatgpt_worker refresh
 ```
 
 The latest human-readable refresh summary is written as `refresh-latest.md` in the configured output root.
+The stable known-input catalog is written as `index.md` and `index.json` in the same output root.
+
+Validate the config without processing:
+
+```bash
+PYTHONPATH=src python3 -m timeline_for_chatgpt_worker config-check
+```
 
 Process one file directly:
 

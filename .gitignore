@@ -12,4 +12,4 @@ worker/.venv/
 
 artifacts/
 
-configs/runtime.local.json
+settings.json

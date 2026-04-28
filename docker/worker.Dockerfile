@@ -7,6 +7,7 @@ WORKDIR /app
 
 COPY worker/ /app/worker/
 COPY configs/ /app/config/
+COPY settings.example.json /app/settings.example.json
 
 RUN pip install --no-cache-dir /app/worker
 

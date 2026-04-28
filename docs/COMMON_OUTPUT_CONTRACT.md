@@ -204,6 +204,7 @@ Minimum expectation:
 `TimelineForChatGPT` also supports directory refresh mode.
 That mode writes `refresh-<timestamp>.json` into the configured output root.
 It also writes `refresh-latest.md` for quick human review of the latest run.
+`index.json` and `index.md` provide the stable catalog for known inputs and latest successful outputs.
 
 The report records:
 
@@ -211,8 +212,11 @@ The report records:
 - discovered inputs
 - processed items
 - unchanged skipped items
+- duplicate skipped items
+- missing inputs from prior state
 - failed items
 - the run directory or previous run directory for each input
+- basic timing for discovery, fingerprinting, processing, and total duration
 
 ## Stage Naming Guidance
 
