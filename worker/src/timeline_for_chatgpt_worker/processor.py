@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .contracts import JobRequest, JobResult, JobStatus
 from .fs_utils import append_log, ensure_dir, load_json, now_iso, write_json
-from .parser import normalize_export
+from .parser import build_archive, normalize_export
 
 
 def outputs_root() -> Path:
@@ -105,7 +105,7 @@ def process_job(run_dir: Path) -> None:
         result.error_count = 0
         result.batch_count = int(normalized["batch_count"])
         result.conversation_index_path = normalized["conversation_index_path"]
-        result.archive_path = normalized["archive_path"]
+        result.archive_path = str(run_dir / f"{request.job_id}.zip")
 
         manifest = {
             "schema_version": 1,
@@ -117,6 +117,7 @@ def process_job(run_dir: Path) -> None:
         write_json(run_dir / "manifest.json", manifest)
         write_json(run_dir / "status.json", status.to_dict())
         write_json(run_dir / "result.json", result.to_dict())
+        build_archive(run_dir, request.job_id, normalized["conversation_rows"], run_dir / "llm")
         append_log(log_path, f"[{now_iso()}] completed {request.job_id}")
     except Exception as exc:  # noqa: BLE001
         status.state = "failed"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import shutil
 import tempfile
 import zipfile
@@ -128,7 +129,7 @@ def normalize_export(
             )
 
         for index, conversation in enumerate(conversations, start=1):
-            normalized = normalize_conversation(conversation, request)
+            normalized = normalize_conversation(conversation, request, export_root)
             summary = normalized["summary"]
             messages = normalized["messages"]
             events = normalized["events"]
@@ -207,7 +208,7 @@ def normalize_export(
             )
 
         batch_count = build_llm_pack(llm_root, conversation_rows, conversations_root)
-        archive_path = build_archive(run_dir, request.job_id, conversation_rows, llm_root)
+        archive_path = run_dir / f"{request.job_id}.zip"
 
         return {
             "export_summary": export_summary,
@@ -232,7 +233,11 @@ def try_load_analysis_summary(export_root: Path) -> dict[str, Any]:
         return {}
 
 
-def normalize_conversation(conversation: dict[str, Any], request: JobRequest) -> dict[str, Any]:
+def normalize_conversation(
+    conversation: dict[str, Any],
+    request: JobRequest,
+    export_root: Path | None = None,
+) -> dict[str, Any]:
     conversation_id = str(conversation.get("conversation_id") or conversation.get("id") or "")
     title = str(conversation.get("title") or conversation_id or "Untitled conversation")
     mapping = conversation.get("mapping") or {}
@@ -267,14 +272,19 @@ def normalize_conversation(conversation: dict[str, Any], request: JobRequest) ->
         if role == "system" and not request.parser_options.include_system_messages:
             continue
 
-        refs = extract_asset_refs(message) if request.parser_options.include_attachments else []
+        message_id = str(message.get("id") or node_id)
+        refs = (
+            extract_asset_refs(message, conversation_id, message_id, export_root)
+            if request.parser_options.include_attachments
+            else []
+        )
         asset_refs.extend(refs)
         main_branch_role_counts.update([role])
         main_branch_content_type_counts.update([content_type(message)])
         messages.append(
             {
                 "conversation_id": conversation_id,
-                "message_id": str(message.get("id") or node_id),
+                "message_id": message_id,
                 "parent_message_id": str(node.get("parent") or ""),
                 "created_at": format_timestamp(message.get("create_time") or conversation.get("create_time")),
                 "role": role,
@@ -405,17 +415,23 @@ def collect_text(value: Any, collected: list[str]) -> None:
                 collect_text(value.get(key), collected)
 
 
-def extract_asset_refs(message: dict[str, Any]) -> list[dict[str, Any]]:
+def extract_asset_refs(
+    message: dict[str, Any],
+    conversation_id: str = "",
+    message_id: str = "",
+    export_root: Path | None = None,
+) -> list[dict[str, Any]]:
     refs: list[dict[str, Any]] = []
     collect_asset_refs(message, refs)
     unique: list[dict[str, Any]] = []
     seen: set[str] = set()
     for ref in refs:
-        key = json.dumps(ref, ensure_ascii=False, sort_keys=True)
+        enriched = enrich_asset_ref(ref, conversation_id, message_id, export_root)
+        key = json.dumps(enriched, ensure_ascii=False, sort_keys=True)
         if key in seen:
             continue
         seen.add(key)
-        unique.append(ref)
+        unique.append(enriched)
     return unique
 
 
@@ -447,6 +463,66 @@ def asset_kind(payload: dict[str, Any]) -> str:
     if any(logical_path.endswith(ext) for ext in (".wav", ".mp3", ".m4a", ".ogg")):
         return "audio"
     return "attachment"
+
+
+def enrich_asset_ref(
+    ref: dict[str, Any],
+    conversation_id: str,
+    message_id: str,
+    export_root: Path | None,
+) -> dict[str, Any]:
+    logical_path = str(ref.get("logical_path") or "")
+    relative_path = normalize_relative_path(logical_path)
+    evidence_path = resolve_evidence_path(export_root, relative_path)
+    evidence = file_evidence(evidence_path) if evidence_path is not None else {}
+    return {
+        **ref,
+        "conversation_id": conversation_id,
+        "message_id": message_id,
+        "relative_path": relative_path,
+        "file_exists": evidence_path is not None,
+        "size_bytes": evidence.get("size_bytes"),
+        "mtime_utc": evidence.get("mtime_utc"),
+        "hash_sha256": evidence.get("hash_sha256"),
+    }
+
+
+def normalize_relative_path(value: str) -> str:
+    normalized = value.replace("\\", "/").strip()
+    if not normalized:
+        return ""
+    path = Path(normalized)
+    if path.is_absolute() or ".." in path.parts:
+        return ""
+    return path.as_posix()
+
+
+def resolve_evidence_path(export_root: Path | None, relative_path: str) -> Path | None:
+    if export_root is None or not relative_path:
+        return None
+    candidate = (export_root / relative_path).resolve()
+    try:
+        candidate.relative_to(export_root.resolve())
+    except ValueError:
+        return None
+    return candidate if candidate.is_file() else None
+
+
+def file_evidence(path: Path) -> dict[str, Any]:
+    stat = path.stat()
+    return {
+        "size_bytes": stat.st_size,
+        "mtime_utc": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+        "hash_sha256": hash_file_sha256(path),
+    }
+
+
+def hash_file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def build_events(conversation_id: str, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:

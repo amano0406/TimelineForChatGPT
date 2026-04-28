@@ -167,6 +167,10 @@ class NormalizeConversationTests(unittest.TestCase):
         self.assertEqual(normalized["segments"][0]["event_ids"], ["m1", "m2"])
         self.assertEqual(normalized["segments"][1]["event_ids"], ["m3", "m4"])
         self.assertEqual(normalized["events"][1]["artifacts"][0]["kind"], "image")
+        self.assertEqual(normalized["events"][1]["artifacts"][0]["conversation_id"], "conv-2")
+        self.assertEqual(normalized["events"][1]["artifacts"][0]["message_id"], "m2")
+        self.assertEqual(normalized["events"][1]["artifacts"][0]["relative_path"], "images/example.png")
+        self.assertIsNone(normalized["events"][1]["artifacts"][0]["hash_sha256"])
         self.assertEqual(normalized["events"][3]["kind"], "tool_result")
         self.assertIn("Segments: `2`", normalized["timeline_markdown"])
 

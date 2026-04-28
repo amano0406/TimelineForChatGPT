@@ -341,6 +341,51 @@ function Get-FirstConversationId {
     return (($firstLine | ConvertFrom-Json).conversation_id)
 }
 
+function Open-ZipArchiveReadWithRetry {
+    param(
+        [string]$Path,
+        [int]$TimeoutSeconds = 10
+    )
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $lastError = $null
+    while ((Get-Date) -lt $deadline) {
+        try {
+            return [System.IO.Compression.ZipFile]::OpenRead($Path)
+        }
+        catch [System.IO.IOException] {
+            $lastError = $_
+            Start-Sleep -Milliseconds 250
+        }
+    }
+
+    throw $lastError
+}
+
+function Read-ZipEntryJson {
+    param(
+        [System.IO.Compression.ZipArchive]$Archive,
+        [string]$EntryName
+    )
+
+    $entry = $Archive.GetEntry($EntryName)
+    Assert-True ($null -ne $entry) "Archive is missing $EntryName"
+    $stream = $entry.Open()
+    try {
+        $reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::UTF8)
+        try {
+            return ($reader.ReadToEnd() | ConvertFrom-Json)
+        }
+        finally {
+            $reader.Dispose()
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
 function Assert-GoodRun {
     param(
         [string]$BaseUrl,
@@ -385,14 +430,22 @@ function Assert-GoodRun {
     Assert-True ($segments.items.Count -ge 1) "Segments file is empty."
     Assert-True ($segments.items[0].event_ids.Count -ge 1) "First segment has no event ids."
 
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archivePath = Join-Path $runDir "$JobId.zip"
-    $archive = [System.IO.Compression.ZipFile]::OpenRead($archivePath)
+    $archive = Open-ZipArchiveReadWithRetry -Path $archivePath
     try {
         $entryNames = @($archive.Entries | ForEach-Object { $_.FullName })
         Assert-True ($entryNames -contains "conversation_index.jsonl") "Archive is missing conversation_index.jsonl"
+        Assert-True ($entryNames -contains "status.json") "Archive is missing status.json"
+        Assert-True ($entryNames -contains "result.json") "Archive is missing result.json"
+        Assert-True ($entryNames -contains "manifest.json") "Archive is missing manifest.json"
         Assert-True ($entryNames -contains "conversations/$conversationId/events.jsonl") "Archive is missing structured conversation events."
         Assert-True ($entryNames -contains "conversations/$conversationId/segments.json") "Archive is missing structured conversation segments."
+        $archiveStatus = Read-ZipEntryJson -Archive $archive -EntryName "status.json"
+        $archiveResult = Read-ZipEntryJson -Archive $archive -EntryName "result.json"
+        $archiveManifest = Read-ZipEntryJson -Archive $archive -EntryName "manifest.json"
+        Assert-True ($archiveStatus.state -eq "completed") "Archive status.json is not final."
+        Assert-True ($archiveResult.state -eq "completed") "Archive result.json is not final."
+        Assert-True ($archiveManifest.items.Count -ge 1) "Archive manifest has no completed items."
     }
     finally {
         $archive.Dispose()

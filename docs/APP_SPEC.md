@@ -49,10 +49,33 @@ Each conversation currently writes:
 - `timeline.md`
 - `attachments.json`
 
+`attachments.json` is an inventory of attachment references observed in the normalized main branch.
+Each item keeps the original `attachment_id` / `logical_path` when present and adds:
+
+- `conversation_id`
+- `message_id`
+- `relative_path`
+- `file_exists`
+- `size_bytes`
+- `mtime_utc`
+- `hash_sha256`
+
 LLM export writes:
 
 - `llm/conversation_index.jsonl`
 - `llm/conversation_corpus-YYYY-MM.jsonl`
+
+## Current contract gaps
+
+The shared Timeline baseline includes `input_snapshot.json` and `fidelity_report.json`.
+This scaffold does not emit those files yet.
+Current equivalents are partial:
+
+- input identity is recorded in `request.json`
+- input summary is recorded in `export_summary.json`
+- parser limitations are documented in `NOTICE.md`, README limitations, and timeline metadata
+
+Future contract work should add explicit `input_snapshot.json` and `fidelity_report.json` without removing the current files.
 
 ## Current scaffold scope
 
