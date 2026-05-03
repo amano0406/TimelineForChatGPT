@@ -181,6 +181,8 @@ Include that smoke test after the Docker unit tests:
 .\scripts\test.ps1 -IncludeLocalCliDownload
 ```
 
+Stability follow-up work is tracked in [docs/STABILITY_BACKLOG.ja.md](docs/STABILITY_BACKLOG.ja.md).
+
 Host Python tests are development-only and require the explicit override:
 
 ```bash

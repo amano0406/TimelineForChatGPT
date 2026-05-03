@@ -12,6 +12,7 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+NORMAL_SETTINGS_PATH = REPO_ROOT / "settings.json"
 FIXTURE_CONVERSATION_ID = "conv-cli-ps1-smoke"
 CLI_TIMEOUT_SECONDS = 240
 
@@ -53,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
         cache_root=cache_root,
     )
     mount_env["COMPOSE_PROJECT_NAME"] = compose_project_name
+    normal_settings_snapshot = _read_optional_bytes(NORMAL_SETTINGS_PATH)
 
     try:
         _write_settings(settings_path, output_root)
@@ -81,6 +83,7 @@ def main(argv: list[str] | None = None) -> int:
         archive_path = _host_path_from_cli(str(download.get("download_path") or ""))
         _assert_master_output(output_root)
         _assert_download_archive(archive_path)
+        _assert_file_unchanged(NORMAL_SETTINGS_PATH, normal_settings_snapshot)
         print(
             json.dumps(
                 {
@@ -89,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
                     "output_root": str(output_root),
                     "download_archive": str(archive_path),
                     "fixture_conversation": FIXTURE_CONVERSATION_ID,
+                    "normal_settings_unchanged": True,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -136,6 +140,16 @@ def _write_settings(settings_path: Path, output_root: Path) -> None:
         json.dumps({"outputRoot": _to_windows_path(output_root)}, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def _read_optional_bytes(path: Path) -> bytes | None:
+    return path.read_bytes() if path.exists() else None
+
+
+def _assert_file_unchanged(path: Path, expected: bytes | None) -> None:
+    actual = _read_optional_bytes(path)
+    if actual != expected:
+        raise AssertionError(f"Smoke test changed a protected file: {path}")
 
 
 def _run_cli(

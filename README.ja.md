@@ -185,6 +185,8 @@ Docker unit tests の後にこの smoke test も含める場合:
 .\scripts\test.ps1 -IncludeLocalCliDownload
 ```
 
+安定性向上の残作業は [docs/STABILITY_BACKLOG.ja.md](docs/STABILITY_BACKLOG.ja.md) に整理しています。
+
 ホスト Python テストは開発用です。明示的な override が必要です。
 
 ```bash
