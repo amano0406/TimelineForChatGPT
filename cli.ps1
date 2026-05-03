@@ -224,11 +224,18 @@ function Invoke-TfcgDocker {
 
 function Start-TfcgComposeWorker {
     param([string]$Docker)
-    $upResult = Invoke-TfcgHiddenProcess -FilePath $Docker -Arguments ((Get-TfcgComposeArguments) + @("up", "-d", "--remove-orphans", "worker")) -SuppressOutput
+    $upResult = Invoke-TfcgHiddenProcess -FilePath $Docker -Arguments (@(Get-TfcgComposeArguments) + @("up", "-d", "--remove-orphans", "worker")) -SuppressOutput
     if ($upResult.ExitCode -ne 0) {
+        $details = @(@(
+            $upResult.Stdout.Trim()
+            $upResult.Stderr.Trim()
+        ) | Where-Object { $_ })
+        if ($details.Count -gt 0) {
+            throw "docker compose up failed with exit code $($upResult.ExitCode): $($details -join [Environment]::NewLine)"
+        }
         throw "docker compose up failed with exit code $($upResult.ExitCode)."
     }
-    $psResult = Invoke-TfcgHiddenProcess -FilePath $Docker -Arguments ((Get-TfcgComposeArguments) + @("ps", "-q", "worker")) -SuppressOutput
+    $psResult = Invoke-TfcgHiddenProcess -FilePath $Docker -Arguments (@(Get-TfcgComposeArguments) + @("ps", "-q", "worker")) -SuppressOutput
     $containerId = $psResult.Stdout.Trim()
     if (-not $containerId) {
         throw "TimelineForChatGPT worker container was not found after docker compose up."
@@ -493,7 +500,7 @@ Invoke-TfcgWithFileLock -LockName "docker-compose.lock" -ScriptBlock {
     }
 
     try {
-        $dockerArgs = (Get-TfcgComposeArguments) + @("exec", "-T", "worker", "python", "-m", "timeline_for_chatgpt_worker") + $converted.ContainerArgs
+        $dockerArgs = @(Get-TfcgComposeArguments) + @("exec", "-T", "worker", "python", "-m", "timeline_for_chatgpt_worker") + $converted.ContainerArgs
         if ($env:TIMELINE_FOR_CHATGPT_DEBUG_CLI -eq "1") {
             Write-Host "CliArgs=$($CliArgs -join '|')"
             Write-Host "DockerArgs=$($dockerArgs -join '|')"
