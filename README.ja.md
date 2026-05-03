@@ -171,13 +171,13 @@ Docker 内でテストします。
 .\scripts\test.ps1
 ```
 
-ローカル `cli.ps1` refresh / download smoke test:
+ローカル `cli.ps1` refresh / list / download smoke test:
 
 ```powershell
 python tests/smoke/run_cli_ps1_download.py
 ```
 
-この smoke test は通常の `settings.json` を書き換えません。一時 settings file、専用 Docker Compose project、一時 app-data/cache/output directory を `C:\TimelineData\tfcg-cli-ps1-smoke-*` 配下に作成し、`--preserve-output` 指定時以外は削除します。
+この smoke test は通常の `settings.json` を書き換えません。一時 settings file、専用 Docker Compose project、一時 app-data/cache/output directory を `C:\TimelineData\tfcg-cli-ps1-smoke-*` 配下に作成し、`--preserve-output` 指定時以外は削除します。長い ZIP ファイル名、空白を含む path、`items refresh --download-to`、`items list` の全件既定とページング、`items download` を確認します。
 
 Docker unit tests の後にこの smoke test も含める場合:
 

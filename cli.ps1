@@ -94,7 +94,25 @@ function Show-TfcgUsage {
 
 function Test-TfcgContainerPath {
     param([string]$Value)
-    return $Value.StartsWith("/")
+    $candidate = Normalize-TfcgPathArgument -Value $Value
+    return $candidate.StartsWith("/")
+}
+
+function Normalize-TfcgPathArgument {
+    param([string]$Value)
+    if ($null -eq $Value) {
+        return ""
+    }
+
+    $text = [string]$Value
+    if ($text.Length -ge 2) {
+        $first = $text.Substring(0, 1)
+        $last = $text.Substring($text.Length - 1, 1)
+        if (($first -eq '"' -and $last -eq '"') -or ($first -eq "'" -and $last -eq "'")) {
+            return $text.Substring(1, $text.Length - 2)
+        }
+    }
+    return $text
 }
 
 function Resolve-TfcgHostPath {
@@ -102,8 +120,15 @@ function Resolve-TfcgHostPath {
         [string]$Value,
         [bool]$RequireExisting
     )
-    $candidate = $Value
-    if (-not [System.IO.Path]::IsPathRooted($candidate)) {
+    $candidate = Normalize-TfcgPathArgument -Value $Value
+    try {
+        $isRooted = [System.IO.Path]::IsPathRooted($candidate)
+    } catch {
+        $visibleCandidate = $candidate.Replace("`r", "<CR>").Replace("`n", "<LF>")
+        $visibleValue = ([string]$Value).Replace("`r", "<CR>").Replace("`n", "<LF>")
+        throw "Invalid host path argument: value=[$visibleValue], normalized=[$visibleCandidate]"
+    }
+    if (-not $isRooted) {
         $candidate = Join-Path $repoRoot $candidate
     }
     if ($RequireExisting) {

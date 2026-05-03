@@ -167,13 +167,13 @@ Docker test entrypoint:
 .\scripts\test.ps1
 ```
 
-Local `cli.ps1` refresh and download smoke test:
+Local `cli.ps1` refresh / list / download smoke test:
 
 ```powershell
 python tests/smoke/run_cli_ps1_download.py
 ```
 
-This smoke test does not rewrite the normal `settings.json`. It creates a temporary settings file, a dedicated Docker Compose project, and temporary app-data/cache/output directories under `C:\TimelineData\tfcg-cli-ps1-smoke-*`, then removes them unless `--preserve-output` is passed.
+This smoke test does not rewrite the normal `settings.json`. It creates a temporary settings file, a dedicated Docker Compose project, and temporary app-data/cache/output directories under `C:\TimelineData\tfcg-cli-ps1-smoke-*`, then removes them unless `--preserve-output` is passed. It covers a long ZIP filename, spaces in the input path, `items refresh --download-to`, default-all and paged `items list`, and `items download`.
 
 Include that smoke test after the Docker unit tests:
 

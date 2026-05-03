@@ -37,13 +37,15 @@ def main(argv: list[str] | None = None) -> int:
     timeline_data = _timeline_data_root()
     smoke_root = timeline_data / f"tfcg-cli-ps1-smoke-{int(time.time())}"
     output_root = smoke_root / "output"
+    refresh_download_root = smoke_root / "refresh-downloads"
     download_root = smoke_root / "downloads"
     settings_root = smoke_root / "settings"
     appdata_root = smoke_root / "app-data"
     cache_root = smoke_root / "cache-data"
-    export_path = smoke_root / "chatgpt-export.zip"
+    long_export_name = f"chatgpt export smoke {'long-name-' * 12}2026.zip"
+    export_path = smoke_root / long_export_name
     settings_path = settings_root / "settings.json"
-    for directory in (output_root, download_root, settings_root, appdata_root, cache_root):
+    for directory in (output_root, refresh_download_root, download_root, settings_root, appdata_root, cache_root):
         directory.mkdir(parents=True, exist_ok=True)
     _write_sample_export(export_path)
 
@@ -61,11 +63,37 @@ def main(argv: list[str] | None = None) -> int:
         refresh = _json_from_stdout(
             _run_cli(
                 powershell,
-                ["items", "refresh", "--file", _to_windows_path(export_path), "--json"],
+                [
+                    "items",
+                    "refresh",
+                    "--file",
+                    _to_windows_path(export_path),
+                    "--download-to",
+                    _to_windows_path(refresh_download_root),
+                    "--json",
+                    "--overwrite",
+                ],
                 mount_env,
             ).stdout
         )
         _assert_refresh_payload(refresh)
+        refresh_archive_path = _assert_refresh_download_payload(refresh, refresh_download_root)
+        items_default = _json_from_stdout(
+            _run_cli(
+                powershell,
+                ["items", "list", "--json"],
+                mount_env,
+            ).stdout
+        )
+        _assert_items_list_payload(items_default, paged=False)
+        items_paged = _json_from_stdout(
+            _run_cli(
+                powershell,
+                ["items", "list", "--page", "1", "--page-size", "1", "--json"],
+                mount_env,
+            ).stdout
+        )
+        _assert_items_list_payload(items_paged, paged=True)
         download = _json_from_stdout(
             _run_cli(
                 powershell,
@@ -90,8 +118,10 @@ def main(argv: list[str] | None = None) -> int:
                     "state": "ok",
                     "entrypoint": "cli.ps1",
                     "output_root": str(output_root),
+                    "refresh_download_archive": str(refresh_archive_path),
                     "download_archive": str(archive_path),
                     "fixture_conversation": FIXTURE_CONVERSATION_ID,
+                    "long_input_name": export_path.name,
                     "normal_settings_unchanged": True,
                 },
                 ensure_ascii=False,
@@ -104,6 +134,8 @@ def main(argv: list[str] | None = None) -> int:
             _cleanup_smoke_compose_project(mount_env)
         if not args.preserve_output:
             shutil.rmtree(smoke_root, ignore_errors=True)
+            if smoke_root.exists():
+                raise AssertionError(f"Smoke output directory was not removed: {smoke_root}")
 
 
 def _resolve_powershell() -> str:
@@ -157,19 +189,17 @@ def _run_cli(
     args: list[str],
     mount_env: dict[str, str],
 ) -> subprocess.CompletedProcess[str]:
-    if shutil.which("cmd.exe"):
-        return _run_cli_through_cmd(powershell, args, mount_env)
     env = os.environ.copy()
     env.update(mount_env)
+    script = _powershell_invocation_script(args, mount_env)
     command = [
         powershell,
         "-NoLogo",
         "-NoProfile",
         "-ExecutionPolicy",
         "Bypass",
-        "-File",
-        _to_windows_path(REPO_ROOT / "cli.ps1"),
-        *args,
+        "-Command",
+        script,
     ]
     completed = subprocess.run(
         command,
@@ -187,63 +217,23 @@ def _run_cli(
     return completed
 
 
-def _run_cli_through_cmd(
-    powershell: str,
-    args: list[str],
-    mount_env: dict[str, str],
-) -> subprocess.CompletedProcess[str]:
-    env_script = "&&".join(
-        f"set {name}={value}"
+def _powershell_invocation_script(args: list[str], mount_env: dict[str, str]) -> str:
+    # Build the argument array inside PowerShell so WSL interop cannot split paths containing spaces.
+    statements = [
+        f"$env:{name} = {_ps_single_quote(value)}"
         for name, value in mount_env.items()
+    ]
+    statements.append(
+        "$cliArgs = @("
+        + ", ".join(_ps_single_quote(value) for value in args)
+        + ")"
     )
-    command_text = " ".join(
-        [
-            _to_windows_command_path(powershell),
-            "-NoLogo",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            _to_windows_path(REPO_ROOT / "cli.ps1"),
-            *args,
-        ]
-    )
-    command_text = f"{env_script}&&{command_text}"
-    completed = subprocess.run(
-        ["cmd.exe", "/c", command_text],
-        cwd=REPO_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=CLI_TIMEOUT_SECONDS,
-    )
-    if completed.returncode != 0:
-        raise RuntimeError(_format_command_error(["cmd.exe", "/c", command_text], completed))
-    return completed
+    statements.append(f"& {_ps_single_quote(_to_windows_path(REPO_ROOT / 'cli.ps1'))} @cliArgs")
+    return "; ".join(statements)
 
 
 def _cleanup_smoke_compose_project(mount_env: dict[str, str]) -> None:
     project_name = mount_env.get("COMPOSE_PROJECT_NAME") or "tfcg-cli-ps1-smoke"
-    if shutil.which("cmd.exe"):
-        env_script = "&&".join(
-            f"set {name}={value}"
-            for name, value in mount_env.items()
-        )
-        command_text = f"{env_script}&&docker compose -p {project_name} down --remove-orphans -v --rmi local"
-        subprocess.run(
-            ["cmd.exe", "/c", command_text],
-            cwd=REPO_ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=CLI_TIMEOUT_SECONDS,
-        )
-        return
-
     env = os.environ.copy()
     env.update(mount_env)
     subprocess.run(
@@ -329,6 +319,45 @@ def _assert_refresh_payload(payload: dict[str, Any]) -> None:
         raise AssertionError(f"Refresh should contain exactly 1 fixture conversation: {payload!r}")
 
 
+def _assert_refresh_download_payload(payload: dict[str, Any], download_root: Path) -> Path:
+    current = payload.get("current") if isinstance(payload.get("current"), dict) else {}
+    copied_download_path = str(current.get("copied_download_path") or "")
+    if not copied_download_path:
+        raise AssertionError(f"Refresh did not report a copied download path: {payload!r}")
+    archive_path = _host_path_from_cli(copied_download_path)
+    if download_root.resolve() not in archive_path.resolve().parents:
+        raise AssertionError(f"Refresh download was not copied under the expected root: {archive_path}")
+    _assert_download_archive(archive_path)
+    return archive_path
+
+
+def _assert_items_list_payload(payload: dict[str, Any], *, paged: bool) -> None:
+    if int(payload.get("item_count") or 0) != 1:
+        raise AssertionError(f"Item list should report exactly 1 fixture conversation: {payload!r}")
+    if int(payload.get("total_items") or 0) != 1:
+        raise AssertionError(f"Item list should contain exactly 1 fixture conversation: {payload!r}")
+
+    items = payload.get("items") if isinstance(payload.get("items"), list) else []
+    if len(items) != 1:
+        raise AssertionError(f"Item list should return exactly 1 fixture conversation: {payload!r}")
+    item = items[0] if isinstance(items[0], dict) else {}
+    item_id = str(item.get("conversation_id") or item.get("id") or "")
+    if item_id != FIXTURE_CONVERSATION_ID:
+        raise AssertionError(f"Item list returned unexpected conversation id: {payload!r}")
+
+    pagination = payload.get("pagination") if isinstance(payload.get("pagination"), dict) else {}
+    expected_mode = "page" if paged else "all"
+    if pagination.get("mode") != expected_mode:
+        raise AssertionError(f"Item list used unexpected pagination mode: {payload!r}")
+    if int(pagination.get("returned_items") or 0) != 1:
+        raise AssertionError(f"Item list should return 1 item in pagination metadata: {payload!r}")
+    if paged:
+        if int(pagination.get("page") or 0) != 1:
+            raise AssertionError(f"Paged item list should return page 1: {payload!r}")
+        if int(pagination.get("page_size") or 0) != 1:
+            raise AssertionError(f"Paged item list should use page size 1: {payload!r}")
+
+
 def _assert_master_output(output_root: Path) -> None:
     timeline_path = output_root / FIXTURE_CONVERSATION_ID / "timeline.json"
     convert_info_path = output_root / FIXTURE_CONVERSATION_ID / "convert_info.json"
@@ -372,10 +401,8 @@ def _json_from_stdout(stdout: str) -> dict[str, Any]:
     return payload
 
 
-def _to_windows_command_path(command: str) -> str:
-    if "/" in command or "\\" in command:
-        return _to_windows_path(Path(command))
-    return command
+def _ps_single_quote(value: str) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
 
 
 def _host_path_from_cli(value: str) -> Path:

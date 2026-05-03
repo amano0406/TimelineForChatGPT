@@ -6,27 +6,24 @@
 ## 現状
 
 - Docker unit test は `scripts/test.ps1` で実行できる。
-- `cli.ps1` 経由の refresh / download smoke test がある。
+- `cli.ps1` 経由の refresh / list / download smoke test がある。
 - smoke test は一時 settings path、専用 Docker Compose project、一時 app-data/cache/output を使う。
 - smoke test は通常の `settings.json` が変化していないことを検証する。
+- smoke test は `items refresh --file ... --download-to ...` と `items download --to ...` の両方を確認する。
+- smoke test は `items list` の全件既定と page / page-size 指定を確認する。
+- smoke test は長い ZIP ファイル名と空白を含む path を Docker wrapper 経由で確認する。
 - テスト用の一時 Docker project / volume / output directory は通常削除される。
 
 ## 優先度高
 
-1. `items refresh --file ... --download-to ...` の smoke test を追加する。
-   現在の smoke は refresh と download を分けて確認しているため、実運用で使う一括導線も確認する。
-
-2. `items list` の smoke test を refresh 後に追加する。
-   最新順、全件既定、pagination 指定時の件数、fixture conversation の存在を Docker wrapper 経由で確認する。
-
-3. 入力 ZIP の異常系 fixture を増やす。
+1. 入力 ZIP の異常系 fixture を増やす。
    corrupted ZIP、`conversations.json` 欠落、空 conversation、壊れた `mapping`、複数 conversation、`conversations-*.json` を分けて確認する。
 
-4. Windows path / long filename の smoke test を追加する。
-   長い ZIP ファイル名、空白を含む path、短縮後の container temp filename、download 先の既存 ZIP without `--overwrite` を確認する。
+2. download 先の既存 ZIP without `--overwrite` を smoke test に追加する。
+   誤上書き防止の contract を実運用 wrapper 経由で確認する。
 
-5. smoke cleanup の検証を明示化する。
-   smoke 完了後に `tfcg-cli-ps1-smoke-*` の directory、Compose project、volume、temporary image が残らないことを検証する。
+3. smoke cleanup の Docker 側検証を明示化する。
+   smoke 完了後に Compose project、volume、temporary image が残らないことを検証する。
 
 ## 優先度中
 
