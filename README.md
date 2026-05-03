@@ -167,6 +167,18 @@ Docker test entrypoint:
 .\scripts\test.ps1
 ```
 
+Local `cli.ps1` refresh and download smoke test:
+
+```powershell
+python tests/smoke/run_cli_ps1_download.py
+```
+
+Include that smoke test after the Docker unit tests:
+
+```powershell
+.\scripts\test.ps1 -IncludeLocalCliDownload
+```
+
 Host Python tests are development-only and require the explicit override:
 
 ```bash

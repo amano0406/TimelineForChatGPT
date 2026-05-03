@@ -95,32 +95,115 @@ function Get-TfcgLastExitCode {
     return 1
 }
 
+function Format-TfcgProcessArgument {
+    param([string]$Value)
+
+    if ($null -eq $Value) { return '""' }
+    $text = [string]$Value
+    if ($text.Length -eq 0) { return '""' }
+    if ($text -notmatch '[\s"]') { return $text }
+
+    $builder = [System.Text.StringBuilder]::new()
+    [void]$builder.Append('"')
+    $backslashes = 0
+    foreach ($character in $text.ToCharArray()) {
+        if ($character -eq '\') {
+            $backslashes += 1
+            continue
+        }
+        if ($character -eq '"') {
+            if ($backslashes -gt 0) {
+                [void]$builder.Append(('\' * ($backslashes * 2)))
+                $backslashes = 0
+            }
+            [void]$builder.Append('\"')
+            continue
+        }
+        if ($backslashes -gt 0) {
+            [void]$builder.Append(('\' * $backslashes))
+            $backslashes = 0
+        }
+        [void]$builder.Append($character)
+    }
+    if ($backslashes -gt 0) {
+        [void]$builder.Append(('\' * ($backslashes * 2)))
+    }
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
+
+function Invoke-TfcgHiddenProcess {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [string[]]$Arguments = @(),
+        [switch]$WriteOutput,
+        [switch]$SuppressOutput
+    )
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $FilePath
+    $startInfo.Arguments = (@($Arguments) | ForEach-Object { Format-TfcgProcessArgument -Value ([string]$_) }) -join " "
+    $startInfo.WorkingDirectory = $repoRoot
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.StandardOutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    $startInfo.StandardErrorEncoding = [System.Text.UTF8Encoding]::new($false)
+    $fileDirectory = Split-Path -Parent $FilePath
+    if ($fileDirectory) {
+        $currentPath = $startInfo.EnvironmentVariables["PATH"]
+        if (-not $currentPath) {
+            $currentPath = $env:PATH
+        }
+        $updatedPath = "$fileDirectory;$currentPath"
+        $startInfo.EnvironmentVariables["PATH"] = $updatedPath
+        $startInfo.EnvironmentVariables["Path"] = $updatedPath
+    }
+    $startInfo.EnvironmentVariables["PATHEXT"] = ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.CPL"
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    [void]$process.Start()
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $process.WaitForExit()
+
+    $stdout = [string]$stdoutTask.Result
+    $stderr = [string]$stderrTask.Result
+    if ($WriteOutput -and -not $SuppressOutput) {
+        if ($stdout.Length -gt 0) { [Console]::Out.Write($stdout) }
+        if ($stderr.Length -gt 0) { [Console]::Error.Write($stderr) }
+    }
+
+    return [pscustomobject]@{
+        ExitCode = [int]$process.ExitCode
+        Stdout = $stdout
+        Stderr = $stderr
+    }
+}
+
 function Invoke-TfcgDocker {
     param(
         [string]$Docker,
         [string[]]$Arguments
     )
-    & $Docker @Arguments
-    $exitCode = Get-TfcgLastExitCode
-    if ($exitCode -ne 0) {
-        throw "docker command failed with exit code ${exitCode}: docker $($Arguments -join ' ')"
+    $result = Invoke-TfcgHiddenProcess -FilePath $Docker -Arguments $Arguments -SuppressOutput
+    if ($result.ExitCode -ne 0) {
+        throw "docker command failed with exit code $($result.ExitCode): docker $($Arguments -join ' ')"
     }
+    return $result
 }
 
 function Start-TfcgComposeWorker {
     param([string]$Docker)
-    $previousErrorActionPreference = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    try {
-        & $Docker compose up -d --remove-orphans worker *> $null
-        $exitCode = Get-TfcgLastExitCode
-    } finally {
-        $ErrorActionPreference = $previousErrorActionPreference
+    $upResult = Invoke-TfcgHiddenProcess -FilePath $Docker -Arguments @("compose", "up", "-d", "--remove-orphans", "worker") -SuppressOutput
+    if ($upResult.ExitCode -ne 0) {
+        throw "docker compose up failed with exit code $($upResult.ExitCode)."
     }
-    if ($exitCode -ne 0) {
-        throw "docker compose up failed with exit code ${exitCode}."
-    }
-    $containerId = (& $Docker compose ps -q worker).Trim()
+    $psResult = Invoke-TfcgHiddenProcess -FilePath $Docker -Arguments @("compose", "ps", "-q", "worker") -SuppressOutput
+    $containerId = $psResult.Stdout.Trim()
     if (-not $containerId) {
         throw "TimelineForChatGPT worker container was not found after docker compose up."
     }
@@ -201,8 +284,8 @@ function Copy-TfcgInputToContainer {
     $root = New-TfcgContainerTempRoot -Kind "uploads"
     $leaf = New-TfcgSafeContainerFileName -Name $HostPath
     $containerPath = "$root/$leaf"
-    Invoke-TfcgDocker -Docker $Docker -Arguments @("exec", $ContainerId, "mkdir", "-p", $root)
-    Invoke-TfcgDocker -Docker $Docker -Arguments @("cp", $HostPath, "${ContainerId}:$containerPath")
+    [void](Invoke-TfcgDocker -Docker $Docker -Arguments @("exec", $ContainerId, "mkdir", "-p", $root))
+    [void](Invoke-TfcgDocker -Docker $Docker -Arguments @("cp", $HostPath, "${ContainerId}:$containerPath"))
     return [PSCustomObject]@{
         ContainerPath = $containerPath
         TempRoot = $root
@@ -246,7 +329,7 @@ function Convert-TfcgArgsForManagedWorker {
             } else {
                 $hostPath = Resolve-TfcgHostPath -Value $rawPath -RequireExisting $false
                 $containerRoot = New-TfcgContainerTempRoot -Kind "handoff"
-                Invoke-TfcgDocker -Docker $Docker -Arguments @("exec", $ContainerId, "mkdir", "-p", $containerRoot)
+                [void](Invoke-TfcgDocker -Docker $Docker -Arguments @("exec", $ContainerId, "mkdir", "-p", $containerRoot))
                 $isZip = [System.IO.Path]::GetExtension($hostPath).ToLowerInvariant() -eq ".zip"
                 if ($isZip) {
                     $hostDir = Split-Path -Parent $hostPath
@@ -298,16 +381,16 @@ function Copy-TfcgOutputsFromContainer {
     $replacements = @{}
     foreach ($plan in $OutputPlans) {
         if ($plan.IsZip) {
-            Invoke-TfcgDocker -Docker $Docker -Arguments @("cp", "${ContainerId}:$($plan.ContainerPath)", $plan.HostPath)
+            [void](Invoke-TfcgDocker -Docker $Docker -Arguments @("cp", "${ContainerId}:$($plan.ContainerPath)", $plan.HostPath))
             $replacements[[string]$plan.ContainerPath] = [string]$plan.HostPath
             continue
         }
 
-        $zipPaths = @(& $Docker exec $ContainerId find $plan.ContainerPath -maxdepth 1 -type f -name "*.zip" -print)
-        $exitCode = Get-TfcgLastExitCode
-        if ($exitCode -ne 0) {
+        $findResult = Invoke-TfcgHiddenProcess -FilePath $Docker -Arguments @("exec", $ContainerId, "find", $plan.ContainerPath, "-maxdepth", "1", "-type", "f", "-name", "*.zip", "-print") -SuppressOutput
+        if ($findResult.ExitCode -ne 0) {
             throw "Failed to inspect container output directory: $($plan.ContainerPath)"
         }
+        $zipPaths = @($findResult.Stdout -split "\r?\n" | Where-Object { $_ })
         foreach ($zipPath in $zipPaths) {
             $zipName = [System.IO.Path]::GetFileName([string]$zipPath)
             $hostZipPath = Join-Path $plan.HostPath $zipName
@@ -316,7 +399,7 @@ function Copy-TfcgOutputsFromContainer {
             }
             $replacements[[string]$zipPath] = [string]$hostZipPath
         }
-        Invoke-TfcgDocker -Docker $Docker -Arguments @("cp", "${ContainerId}:$($plan.ContainerPath)/.", $plan.HostPath)
+        [void](Invoke-TfcgDocker -Docker $Docker -Arguments @("cp", "${ContainerId}:$($plan.ContainerPath)/.", $plan.HostPath))
     }
     return $replacements
 }
@@ -329,7 +412,7 @@ function Remove-TfcgContainerTempRoots {
     )
     foreach ($root in $TempRoots) {
         if ($root) {
-            & $Docker exec $ContainerId rm -rf $root *> $null
+            [void](Invoke-TfcgHiddenProcess -FilePath $Docker -Arguments @("exec", $ContainerId, "rm", "-rf", $root) -SuppressOutput)
         }
     }
 }
@@ -365,8 +448,8 @@ if ($hostOutputRoot) {
     $env:TIMELINE_FOR_CHATGPT_HOST_OUTPUT_ROOT = $hostOutputRoot
 }
 $docker = Get-TfcgDockerCommand
-& $docker info *> $null
-if (-not $?) {
+$dockerInfo = Invoke-TfcgHiddenProcess -FilePath $docker -Arguments @("info") -SuppressOutput
+if ($dockerInfo.ExitCode -ne 0) {
     throw "Docker Desktop is installed but the Docker engine is not ready."
 }
 
@@ -389,8 +472,12 @@ Invoke-TfcgWithFileLock -LockName "docker-compose.lock" -ScriptBlock {
             Write-Host "CliArgs=$($CliArgs -join '|')"
             Write-Host "DockerArgs=$($dockerArgs -join '|')"
         }
-        $script:TfcgCommandOutput = & $docker @dockerArgs 2>&1
-        $script:TfcgExitCode = Get-TfcgLastExitCode
+        $workerResult = Invoke-TfcgHiddenProcess -FilePath $docker -Arguments $dockerArgs -SuppressOutput
+        $script:TfcgCommandOutput = @($workerResult.Stdout)
+        if ($workerResult.Stderr.Length -gt 0) {
+            [Console]::Error.Write($workerResult.Stderr)
+        }
+        $script:TfcgExitCode = $workerResult.ExitCode
         if ($script:TfcgExitCode -eq 0 -and $converted.OutputPlans.Count -gt 0) {
             $outputReplacements = Copy-TfcgOutputsFromContainer -Docker $docker -ContainerId $containerId -OutputPlans $converted.OutputPlans
             foreach ($key in $outputReplacements.Keys) {

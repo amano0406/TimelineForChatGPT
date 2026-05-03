@@ -171,6 +171,18 @@ Docker 内でテストします。
 .\scripts\test.ps1
 ```
 
+ローカル `cli.ps1` refresh / download smoke test:
+
+```powershell
+python tests/smoke/run_cli_ps1_download.py
+```
+
+Docker unit tests の後にこの smoke test も含める場合:
+
+```powershell
+.\scripts\test.ps1 -IncludeLocalCliDownload
+```
+
 ホスト Python テストは開発用です。明示的な override が必要です。
 
 ```bash
