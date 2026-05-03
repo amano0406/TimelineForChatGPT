@@ -4,6 +4,35 @@
 
 This product is CLI-only. There is no Web UI. Normal operation is Windows PowerShell first and Docker-only behind it.
 
+## README Role
+
+This root README is the first operational guide for normal use. Its role is limited to:
+
+- explain what this product accepts as input and writes as output
+- show the normal CLI, settings, output location, and validation commands
+- make the non-destructive source ZIP and normal `settings.json` rules explicit
+- point to detailed design, internal pipeline, and stability backlog documents
+
+Detailed internal specs and design notes live under `docs/`. For normal operation, prefer this README, `cli.bat` / `cli.ps1`, and `settings.example.json`.
+
+The `README.md` inside a download ZIP is an artifact README that explains the generated package. It has a different role from this root README.
+
+## Quick Start
+
+```powershell
+cd C:\apps\TimelineForChatGPT
+.\cli.bat settings init
+.\cli.bat items refresh --file C:\path\chatgpt-export.zip --json
+.\cli.bat items list --json
+.\cli.bat items download --to C:\path\handoff
+```
+
+The default output root is `C:\TimelineData\chatgpt`. Run this only when you need to change it:
+
+```powershell
+.\cli.bat settings output set C:\TimelineData\chatgpt
+```
+
 ## What It Does
 
 - Reads one ChatGPT export ZIP specified at refresh time.
@@ -91,6 +120,8 @@ The download ZIP contains only the handoff files:
 - `README.md`
 - `items/<conversation-id>/convert_info.json`
 - `items/<conversation-id>/timeline.json`
+
+The `README.md` inside the ZIP explains which application generated the package, what each file means, generated time, run ID, source ZIP filename, and conversation count.
 
 `timeline.json` intentionally contains a simple `title` field. It does not contain `title_source` or `title_history_available`.
 
@@ -188,6 +219,14 @@ Host Python tests are development-only and require the explicit override:
 ```bash
 TIMELINE_FOR_CHATGPT_ALLOW_HOST_CLI=1 PYTHONPATH=/mnt/c/apps/TimelineForChatGPT/worker/src python3 -m unittest discover -s /mnt/c/apps/TimelineForChatGPT/worker/tests -v
 ```
+
+## Detailed Documents
+
+- [docs/PIPELINE.md](docs/PIPELINE.md): flow from ZIP handoff to parsing, master output, and handoff ZIP generation
+- [docs/COMMON_OUTPUT_CONTRACT.md](docs/COMMON_OUTPUT_CONTRACT.md): output contract aligned with the Timeline family
+- [docs/NORMALIZED_EVENT_ALIGNMENT.md](docs/NORMALIZED_EVENT_ALIGNMENT.md): normalized event / segment model
+- [docs/STABILITY_BACKLOG.ja.md](docs/STABILITY_BACKLOG.ja.md): stability follow-up backlog
+- [docs/APP_SPEC.md](docs/APP_SPEC.md): design notes. For normal operation, prefer this README
 
 ## Current Boundary
 

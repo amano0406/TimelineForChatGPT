@@ -4,6 +4,35 @@
 
 この製品に Web UI はありません。通常利用は Windows PowerShell を入口にし、実処理は Docker Compose 管理の worker コンテナ内で行います。
 
+## README の役割
+
+この root README は、通常利用時に最初に読む運用ガイドです。役割は次に限定します。
+
+- この製品が何を入力し、何を出力するかを説明する
+- 通常利用の CLI、設定、出力先、検証方法を示す
+- 破壊してはいけない入力 ZIP や通常 `settings.json` の扱いを明示する
+- 詳細設計、内部 pipeline、安定化 backlog への入口を示す
+
+詳細な内部仕様や設計メモは `docs/` に置きます。通常運用の判断では、この README、`cli.bat` / `cli.ps1`、`settings.example.json` を優先します。
+
+download ZIP に含まれる `README.md` は、生成された ZIP の中身を説明するための成果物内 README です。この root README とは役割が異なります。
+
+## 最短手順
+
+```powershell
+cd C:\apps\TimelineForChatGPT
+.\cli.bat settings init
+.\cli.bat items refresh --file C:\path\chatgpt-export.zip --json
+.\cli.bat items list --json
+.\cli.bat items download --to C:\path\handoff
+```
+
+既定の出力先は `C:\TimelineData\chatgpt` です。変更する場合だけ次を実行します。
+
+```powershell
+.\cli.bat settings output set C:\TimelineData\chatgpt
+```
+
 ## できること
 
 - 指定された ChatGPT export ZIP を 1 つ読む
@@ -91,6 +120,8 @@ handoff 用 ZIP に含まれるのは次だけです。
 - `README.md`
 - `items/<conversation-id>/convert_info.json`
 - `items/<conversation-id>/timeline.json`
+
+この ZIP 内の `README.md` は、何のアプリケーションで生成された ZIP か、各ファイルが何を意味するか、生成日時、run ID、元 ZIP ファイル名、conversation 件数を説明します。
 
 `timeline.json` は単純な `title` フィールドだけを持ちます。`title_source` や `title_history_available` は持ちません。
 
@@ -192,6 +223,14 @@ Docker unit tests の後にこの smoke test も含める場合:
 ```bash
 TIMELINE_FOR_CHATGPT_ALLOW_HOST_CLI=1 PYTHONPATH=/mnt/c/apps/TimelineForChatGPT/worker/src python3 -m unittest discover -s /mnt/c/apps/TimelineForChatGPT/worker/tests -v
 ```
+
+## 詳細ドキュメント
+
+- [docs/PIPELINE.md](docs/PIPELINE.md): ZIP 受け取りから parse、master 出力、handoff ZIP 生成までの流れ
+- [docs/COMMON_OUTPUT_CONTRACT.md](docs/COMMON_OUTPUT_CONTRACT.md): Timeline family と揃える出力 contract
+- [docs/NORMALIZED_EVENT_ALIGNMENT.md](docs/NORMALIZED_EVENT_ALIGNMENT.md): normalized event / segment の考え方
+- [docs/STABILITY_BACKLOG.ja.md](docs/STABILITY_BACKLOG.ja.md): 安定性向上の残作業
+- [docs/APP_SPEC.md](docs/APP_SPEC.md): 設計メモ。通常運用の手順はこの README を優先する
 
 ## 現在の境界
 
