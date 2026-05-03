@@ -177,6 +177,8 @@ Docker 内でテストします。
 python tests/smoke/run_cli_ps1_download.py
 ```
 
+この smoke test は通常の `settings.json` を書き換えません。一時 settings file、専用 Docker Compose project、一時 app-data/cache/output directory を `C:\TimelineData\tfcg-cli-ps1-smoke-*` 配下に作成し、`--preserve-output` 指定時以外は削除します。
+
 Docker unit tests の後にこの smoke test も含める場合:
 
 ```powershell

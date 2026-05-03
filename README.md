@@ -173,6 +173,8 @@ Local `cli.ps1` refresh and download smoke test:
 python tests/smoke/run_cli_ps1_download.py
 ```
 
+This smoke test does not rewrite the normal `settings.json`. It creates a temporary settings file, a dedicated Docker Compose project, and temporary app-data/cache/output directories under `C:\TimelineData\tfcg-cli-ps1-smoke-*`, then removes them unless `--preserve-output` is passed.
+
 Include that smoke test after the Docker unit tests:
 
 ```powershell

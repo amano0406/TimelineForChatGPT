@@ -20,8 +20,19 @@ function Get-TfcgDockerCommand {
     throw "docker.exe was not found. Install or start Docker Desktop."
 }
 
+function Get-TfcgHostSettingsPath {
+    $settingsPath = [Environment]::GetEnvironmentVariable("TIMELINE_FOR_CHATGPT_HOST_SETTINGS_PATH", "Process")
+    if ([string]::IsNullOrWhiteSpace($settingsPath)) {
+        $settingsPath = Join-Path $repoRoot "settings.json"
+    }
+    elseif (-not [System.IO.Path]::IsPathRooted($settingsPath)) {
+        $settingsPath = Join-Path $repoRoot $settingsPath
+    }
+    return [System.IO.Path]::GetFullPath($settingsPath)
+}
+
 function Get-TfcgConfiguredOutputRoot {
-    $settingsPath = Join-Path $repoRoot "settings.json"
+    $settingsPath = Get-TfcgHostSettingsPath
     if (-not (Test-Path -LiteralPath $settingsPath)) {
         return $null
     }
@@ -37,8 +48,12 @@ function Get-TfcgConfiguredOutputRoot {
 }
 
 function Initialize-TfcgSettingsFile {
-    $settingsPath = Join-Path $repoRoot "settings.json"
+    $settingsPath = Get-TfcgHostSettingsPath
     if (-not (Test-Path -LiteralPath $settingsPath)) {
+        $settingsDir = Split-Path -Parent $settingsPath
+        if ($settingsDir -and -not (Test-Path -LiteralPath $settingsDir)) {
+            New-Item -ItemType Directory -Path $settingsDir | Out-Null
+        }
         Copy-Item -LiteralPath (Join-Path $repoRoot "settings.example.json") -Destination $settingsPath
     }
     $outputRoot = Get-TfcgConfiguredOutputRoot
@@ -47,6 +62,17 @@ function Initialize-TfcgSettingsFile {
             New-Item -ItemType Directory -Path $outputRoot | Out-Null
         }
     }
+}
+
+function Get-TfcgComposeArguments {
+    $arguments = [System.Collections.Generic.List[string]]::new()
+    $arguments.Add("compose") | Out-Null
+    $projectName = [Environment]::GetEnvironmentVariable("COMPOSE_PROJECT_NAME", "Process")
+    if (-not [string]::IsNullOrWhiteSpace($projectName)) {
+        $arguments.Add("-p") | Out-Null
+        $arguments.Add($projectName) | Out-Null
+    }
+    return $arguments.ToArray()
 }
 
 function Show-TfcgUsage {
@@ -198,11 +224,11 @@ function Invoke-TfcgDocker {
 
 function Start-TfcgComposeWorker {
     param([string]$Docker)
-    $upResult = Invoke-TfcgHiddenProcess -FilePath $Docker -Arguments @("compose", "up", "-d", "--remove-orphans", "worker") -SuppressOutput
+    $upResult = Invoke-TfcgHiddenProcess -FilePath $Docker -Arguments ((Get-TfcgComposeArguments) + @("up", "-d", "--remove-orphans", "worker")) -SuppressOutput
     if ($upResult.ExitCode -ne 0) {
         throw "docker compose up failed with exit code $($upResult.ExitCode)."
     }
-    $psResult = Invoke-TfcgHiddenProcess -FilePath $Docker -Arguments @("compose", "ps", "-q", "worker") -SuppressOutput
+    $psResult = Invoke-TfcgHiddenProcess -FilePath $Docker -Arguments ((Get-TfcgComposeArguments) + @("ps", "-q", "worker")) -SuppressOutput
     $containerId = $psResult.Stdout.Trim()
     if (-not $containerId) {
         throw "TimelineForChatGPT worker container was not found after docker compose up."
@@ -467,7 +493,7 @@ Invoke-TfcgWithFileLock -LockName "docker-compose.lock" -ScriptBlock {
     }
 
     try {
-        $dockerArgs = @("compose", "exec", "-T", "worker", "python", "-m", "timeline_for_chatgpt_worker") + $converted.ContainerArgs
+        $dockerArgs = (Get-TfcgComposeArguments) + @("exec", "-T", "worker", "python", "-m", "timeline_for_chatgpt_worker") + $converted.ContainerArgs
         if ($env:TIMELINE_FOR_CHATGPT_DEBUG_CLI -eq "1") {
             Write-Host "CliArgs=$($CliArgs -join '|')"
             Write-Host "DockerArgs=$($dockerArgs -join '|')"

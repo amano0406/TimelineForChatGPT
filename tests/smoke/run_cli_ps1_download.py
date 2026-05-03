@@ -12,7 +12,6 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SETTINGS_PATH = REPO_ROOT / "settings.json"
 FIXTURE_CONVERSATION_ID = "conv-cli-ps1-smoke"
 CLI_TIMEOUT_SECONDS = 240
 
@@ -26,6 +25,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Keep the temporary C:\\TimelineData smoke output for manual inspection.",
     )
+    parser.add_argument(
+        "--keep-compose-project",
+        action="store_true",
+        help="Do not remove the temporary Docker Compose project after the smoke test.",
+    )
     args = parser.parse_args(argv)
 
     powershell = _resolve_powershell()
@@ -33,20 +37,30 @@ def main(argv: list[str] | None = None) -> int:
     smoke_root = timeline_data / f"tfcg-cli-ps1-smoke-{int(time.time())}"
     output_root = smoke_root / "output"
     download_root = smoke_root / "downloads"
+    settings_root = smoke_root / "settings"
+    appdata_root = smoke_root / "app-data"
+    cache_root = smoke_root / "cache-data"
     export_path = smoke_root / "chatgpt-export.zip"
-    output_root.mkdir(parents=True, exist_ok=True)
-    download_root.mkdir(parents=True, exist_ok=True)
+    settings_path = settings_root / "settings.json"
+    for directory in (output_root, download_root, settings_root, appdata_root, cache_root):
+        directory.mkdir(parents=True, exist_ok=True)
     _write_sample_export(export_path)
 
-    original_settings = SETTINGS_PATH.read_bytes() if SETTINGS_PATH.exists() else None
-    original_settings_existed = SETTINGS_PATH.exists()
+    compose_project_name = f"tfcg-cli-ps1-smoke-{int(time.time())}"
+    mount_env = _build_smoke_mount_env(
+        settings_path=settings_path,
+        appdata_root=appdata_root,
+        cache_root=cache_root,
+    )
+    mount_env["COMPOSE_PROJECT_NAME"] = compose_project_name
 
     try:
-        _write_settings(output_root)
+        _write_settings(settings_path, output_root)
         refresh = _json_from_stdout(
             _run_cli(
                 powershell,
                 ["items", "refresh", "--file", _to_windows_path(export_path), "--json"],
+                mount_env,
             ).stdout
         )
         _assert_refresh_payload(refresh)
@@ -61,6 +75,7 @@ def main(argv: list[str] | None = None) -> int:
                     "--json",
                     "--overwrite",
                 ],
+                mount_env,
             ).stdout
         )
         archive_path = _host_path_from_cli(str(download.get("download_path") or ""))
@@ -81,7 +96,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
     finally:
-        _restore_settings(original_settings, original_settings_existed)
+        if not args.keep_compose_project:
+            _cleanup_smoke_compose_project(mount_env)
         if not args.preserve_output:
             shutil.rmtree(smoke_root, ignore_errors=True)
 
@@ -102,23 +118,35 @@ def _timeline_data_root() -> Path:
     raise RuntimeError("This smoke test requires Windows C: drive access.")
 
 
-def _write_settings(output_root: Path) -> None:
-    SETTINGS_PATH.write_text(
+def _build_smoke_mount_env(
+    *,
+    settings_path: Path,
+    appdata_root: Path,
+    cache_root: Path,
+) -> dict[str, str]:
+    return {
+        "TIMELINE_FOR_CHATGPT_HOST_SETTINGS_PATH": _to_windows_path(settings_path),
+        "TIMELINE_FOR_CHATGPT_HOST_APPDATA_ROOT": _to_windows_path(appdata_root),
+        "TIMELINE_FOR_CHATGPT_HOST_CACHE_ROOT": _to_windows_path(cache_root),
+    }
+
+
+def _write_settings(settings_path: Path, output_root: Path) -> None:
+    settings_path.write_text(
         json.dumps({"outputRoot": _to_windows_path(output_root)}, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
 
 
-def _restore_settings(original_settings: bytes | None, original_settings_existed: bool) -> None:
-    if original_settings_existed and original_settings is not None:
-        SETTINGS_PATH.write_bytes(original_settings)
-    elif SETTINGS_PATH.exists():
-        SETTINGS_PATH.unlink()
-
-
-def _run_cli(powershell: str, args: list[str]) -> subprocess.CompletedProcess[str]:
+def _run_cli(
+    powershell: str,
+    args: list[str],
+    mount_env: dict[str, str],
+) -> subprocess.CompletedProcess[str]:
     if shutil.which("cmd.exe"):
-        return _run_cli_through_cmd(powershell, args)
+        return _run_cli_through_cmd(powershell, args, mount_env)
+    env = os.environ.copy()
+    env.update(mount_env)
     command = [
         powershell,
         "-NoLogo",
@@ -132,6 +160,7 @@ def _run_cli(powershell: str, args: list[str]) -> subprocess.CompletedProcess[st
     completed = subprocess.run(
         command,
         cwd=REPO_ROOT,
+        env=env,
         check=False,
         capture_output=True,
         text=True,
@@ -147,7 +176,12 @@ def _run_cli(powershell: str, args: list[str]) -> subprocess.CompletedProcess[st
 def _run_cli_through_cmd(
     powershell: str,
     args: list[str],
+    mount_env: dict[str, str],
 ) -> subprocess.CompletedProcess[str]:
+    env_script = "&&".join(
+        f"set {name}={value}"
+        for name, value in mount_env.items()
+    )
     command_text = " ".join(
         [
             _to_windows_command_path(powershell),
@@ -160,6 +194,7 @@ def _run_cli_through_cmd(
             *args,
         ]
     )
+    command_text = f"{env_script}&&{command_text}"
     completed = subprocess.run(
         ["cmd.exe", "/c", command_text],
         cwd=REPO_ROOT,
@@ -173,6 +208,41 @@ def _run_cli_through_cmd(
     if completed.returncode != 0:
         raise RuntimeError(_format_command_error(["cmd.exe", "/c", command_text], completed))
     return completed
+
+
+def _cleanup_smoke_compose_project(mount_env: dict[str, str]) -> None:
+    project_name = mount_env.get("COMPOSE_PROJECT_NAME") or "tfcg-cli-ps1-smoke"
+    if shutil.which("cmd.exe"):
+        env_script = "&&".join(
+            f"set {name}={value}"
+            for name, value in mount_env.items()
+        )
+        command_text = f"{env_script}&&docker compose -p {project_name} down --remove-orphans -v --rmi local"
+        subprocess.run(
+            ["cmd.exe", "/c", command_text],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=CLI_TIMEOUT_SECONDS,
+        )
+        return
+
+    env = os.environ.copy()
+    env.update(mount_env)
+    subprocess.run(
+        ["docker", "compose", "-p", project_name, "down", "--remove-orphans", "-v", "--rmi", "local"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=CLI_TIMEOUT_SECONDS,
+    )
 
 
 def _format_command_error(command: list[str], completed: subprocess.CompletedProcess[str]) -> str:

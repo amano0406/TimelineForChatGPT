@@ -15,10 +15,10 @@ services:
       TIMELINE_FOR_CHATGPT_UPLOADS_ROOT: /tmp/timeline-for-chatgpt/uploads
       TIMELINE_FOR_CHATGPT_OUTPUTS_ROOT: /shared/app-data/runs
     volumes:
-      - ./settings.json:/workspace/settings.json
+      - "${TIMELINE_FOR_CHATGPT_HOST_SETTINGS_PATH:-./settings.json}:/workspace/settings.json"
       - "${TIMELINE_FOR_CHATGPT_HOST_OUTPUT_ROOT:-C:/TimelineData/chatgpt}:/workspace/output"
-      - app-data:/shared/app-data
-      - cache-data:/shared/cache
+      - "${TIMELINE_FOR_CHATGPT_HOST_APPDATA_ROOT:-app-data}:/shared/app-data"
+      - "${TIMELINE_FOR_CHATGPT_HOST_CACHE_ROOT:-cache-data}:/shared/cache"
 
 volumes:
   app-data:
