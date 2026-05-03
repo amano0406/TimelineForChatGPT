@@ -10,20 +10,23 @@ function Set-TimelineForChatGPTRoot {
 
 function Initialize-TimelineForChatGPTWorkspace {
     Set-TimelineForChatGPTRoot
-    foreach ($path in @("data\inputs", "data\outputs", "data\state")) {
-        if (-not (Test-Path -LiteralPath $path)) {
-            New-Item -ItemType Directory -Path $path | Out-Null
-        }
-    }
 }
 
 function Initialize-TimelineForChatGPTSettings {
     Initialize-TimelineForChatGPTWorkspace
     if (-not (Test-Path -LiteralPath "settings.json")) {
-        & docker compose run --rm worker settings init
-        if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
+        Copy-Item -LiteralPath "settings.example.json" -Destination "settings.json"
+    }
+    $settings = Get-Content -LiteralPath "settings.json" -Raw | ConvertFrom-Json
+    $outputRoot = [string]$settings.outputRoot
+    if ($outputRoot) {
+        if (-not [System.IO.Path]::IsPathRooted($outputRoot)) {
+            $outputRoot = Join-Path (Get-Location) $outputRoot
         }
+        if (-not (Test-Path -LiteralPath $outputRoot)) {
+            New-Item -ItemType Directory -Path $outputRoot | Out-Null
+        }
+        $env:TIMELINE_FOR_CHATGPT_HOST_OUTPUT_ROOT = $outputRoot
     }
 }
 

@@ -1,4 +1,4 @@
 . "$PSScriptRoot\common.ps1"
-Initialize-TimelineForChatGPTSettings
-& docker compose run --rm worker refresh --force @args
-Exit-TimelineForChatGPTNativeCommand
+Set-TimelineForChatGPTRoot
+Write-Error "Force directory refresh is not part of the current TimelineForChatGPT workflow. items refresh --file always rebuilds the output from the specified ZIP."
+exit 2

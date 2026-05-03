@@ -2,16 +2,17 @@
 
 ## 1. Request Creation
 
-For normal Windows operation, the PowerShell `scripts/refresh.ps1` entrypoint invokes the Docker CLI `refresh` command.
-That command reads configured input roots, fingerprints discovered ZIP files, and skips unchanged inputs.
-It also rejects overlapping refresh runs with `stateRoot/refresh.lock`.
+For normal Windows operation, the `cli.bat` entrypoint invokes `items refresh --file` through the PowerShell wrapper.
+The input ZIP is specified explicitly and is copied into a temporary container path for the managed Docker Compose worker.
+The command rejects overlapping refresh runs with an internal Docker state lock.
 
-For changed inputs, the Docker CLI writes `request.json` into a new timestamped `job-*` directory under the configured output root.
+For each refresh, the Docker CLI writes `request.json` into a new timestamped `run-*` directory under the internal `app-data` volume.
 Direct `docker compose ...` usage remains available as the WSL/developer backdoor.
 
 ## 2. Worker Execution
 
-The Python worker can process that run immediately through the Docker CLI `refresh` or `process` command, or it can poll output roots for pending jobs whose `status.json` is still `pending`.
+The Python worker processes the run immediately through `items refresh --file` or `process`.
+It can also poll the internal run root for pending runs whose `status.json` is still `pending`.
 Host Python CLI execution is blocked for normal operation and is only allowed when `TIMELINE_FOR_CHATGPT_ALLOW_HOST_CLI=1` is set for tests.
 
 ## 3. Extract
@@ -38,29 +39,37 @@ The worker:
 
 ## 6. Render
 
-The worker writes:
+The run workspace writes:
 
 - `conversation_index.jsonl`
 - `conversations/<id>/timeline.md`
 - `llm/conversation_corpus-YYYY-MM.jsonl`
 
+The final output root writes:
+
+- `manifest.json`
+- `<conversation-id>/convert_info.json`
+- `<conversation-id>/timeline.json`
+
 ## 7. Package
 
-The worker creates `job-....zip` containing:
+The worker creates a run archive containing:
 
 - `conversation_index.jsonl`
 - `timelines/*.md`
 - `llm/*`
+
+`items refresh --file` also creates a handoff ZIP from the final output root. That ZIP contains:
+
+- `README.md`
+- `items/<conversation-id>/convert_info.json`
+- `items/<conversation-id>/timeline.json`
 
 ## 8. Failure Model
 
 - conversation-level failures should not block unrelated conversations
 - run-level failures still write `status.json` and `result.json`
 - `logs/worker.log` is the primary execution trace
-- refresh-level results are recorded in timestamped `refresh-....json` reports
-- the latest refresh result is also written to `refresh-latest.md` for human review
-- `index.json` and `index.md` provide a stable catalog of known inputs and latest successful outputs
-- refresh reports include timing for discovery, fingerprinting, processing, and total duration
-- unchanged inputs are recorded as `skipped_unchanged` and are not reprocessed unless `--force` is used
-- duplicate inputs are recorded as `duplicate_skipped`
-- inputs that disappeared since the last refresh are recorded as `missing_from_input`
+- the latest completed refresh is recorded in internal `current.json`
+- refresh history is appended to internal `refresh-history.jsonl`
+- the final output root is rebuilt from scratch for the supplied ZIP

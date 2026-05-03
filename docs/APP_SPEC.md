@@ -6,33 +6,30 @@
 
 The system prioritizes:
 
-- fixed input directories for normal refresh operation
-- readable run output
-- local processing
-- a product shape close to `video2timeline`
+- explicit ChatGPT export ZIP input at refresh time
+- readable per-conversation output
+- local Docker-only processing
+- a product shape close to the Timeline family CLI workflow
 
 ## App Model
 
 - `worker`: Docker CLI and Python worker pipeline
-- primary Windows entrypoint: PowerShell scripts under `scripts/*.ps1`
+- primary Windows entrypoint: `cli.bat`
 - WSL/developer backdoor: direct `docker compose ...` commands
-- coordination: filesystem run directories
+- coordination: Docker-managed filesystem run directories
 
 ## User Flow
 
-1. keep input directories and output/state roots in config
-2. run `.\scripts\refresh.ps1` from PowerShell
-3. the script invokes the Docker CLI to scan configured input directories
-4. unchanged inputs are skipped from processing
-5. duplicate input content is skipped inside the same refresh
-6. inputs missing from the configured folders are reported without deleting old outputs
-7. changed inputs create run directories
-8. the worker writes status, result, index, timeline, and attachment inventory files
-9. inspect the refresh report or generated run directories
-10. use the final ZIP handoff package when another LLM or review workflow needs the output
+1. keep `outputRoot` in `settings.json`
+2. run `.\cli.bat items refresh --file C:\path\chatgpt-export.zip` from Windows command host or PowerShell
+3. the wrapper copies the ZIP into a temporary container path
+4. the Docker CLI creates an internal run directory
+5. the worker writes status, result, index, timeline, and attachment inventory files
+6. the final `outputRoot` is rebuilt from the supplied ZIP
+7. use the final ZIP handoff package when another LLM or review workflow needs the output
 
 The Docker CLI `process` command remains available for one-off ZIP or extracted export directory processing.
-The `config-check` command validates the configured roots without processing inputs.
+The `config-check` command validates the configured output/runtime roots without processing inputs.
 
 ## Output Model
 
@@ -77,8 +74,8 @@ Every refresh writes:
 - `index.json` in the configured output root
 - `index.md` in the configured output root
 - `refresh-<timestamp>.json` in the configured output root
-- `refresh-latest.md` in the configured output root
-- `refresh_state.json` in the configured state root
+- internal `current.json` and `refresh-history.jsonl` in the Docker-managed run root
+- final per-conversation artifacts under the configured `outputRoot`
 
 ## Current contract gaps
 
@@ -94,16 +91,11 @@ Future contract work should add explicit `input_snapshot.json` and `fidelity_rep
 
 ## Current scaffold scope
 
-- configured input directories for normal refresh operation
-- one ZIP or extracted export directory per Docker CLI job
-- unchanged input skipping based on file fingerprint state
-- duplicate input skipping based on ZIP content hash
-- missing input reporting for state entries no longer present on disk
+- one ChatGPT export ZIP per `items refresh --file`
+- full rebuild of the configured `outputRoot` from the supplied ZIP
 - refresh lock file to reject overlapping refresh runs
-- refresh index files for known inputs and latest successful outputs
-- refresh timing for discovery, fingerprinting, processing, and total duration
-- local config example for fixed input/output/state roots
-- config validation for missing input roots and unsafe recursive output/state placement
+- internal current-run pointer and refresh history
+- local settings example with only `outputRoot`
 - current-branch-first normalization
 - best-effort text extraction
 - best-effort timeline rendering

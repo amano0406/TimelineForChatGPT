@@ -1,33 +1,3 @@
 {
-  "allowedExtensions": [
-    ".zip"
-  ],
-  "refresh": {
-    "recursive": false,
-    "profile": "timeline-default"
-  },
-  "inputRoots": [
-    {
-      "id": "exports",
-      "displayName": "ChatGPT Exports",
-      "path": "data/inputs",
-      "enabled": true
-    },
-    {
-      "id": "archive",
-      "displayName": "Archived ChatGPT Exports",
-      "path": "data/archive",
-      "enabled": false
-    }
-  ],
-  "outputRoot": {
-    "id": "runs",
-    "displayName": "Runs",
-    "path": "data/outputs"
-  },
-  "stateRoot": {
-    "id": "state",
-    "displayName": "Refresh State",
-    "path": "data/state"
-  }
+  "outputRoot": "C:\\TimelineData\\chatgpt"
 }

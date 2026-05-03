@@ -1,4 +1,8 @@
 . "$PSScriptRoot\common.ps1"
-Set-TimelineForChatGPTRoot
-& docker compose run --rm --entrypoint python -e PYTHONPATH=/workspace/worker/src worker -m unittest discover -s /workspace/worker/tests -v
+Initialize-TimelineForChatGPTSettings
+& docker compose up -d --build worker
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
+& docker compose exec -T worker python -m unittest discover -s /app/worker/tests -v
 Exit-TimelineForChatGPTNativeCommand

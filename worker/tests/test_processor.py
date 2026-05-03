@@ -11,16 +11,19 @@ from pathlib import Path
 from unittest.mock import patch
 
 from timeline_for_chatgpt_worker.cli import (
-    create_job_from_input,
+    create_run_from_input,
     docker_only_cli_guard_message,
+    items_download_latest,
+    items_list_payload,
+    items_refresh_from_file,
     main,
     refresh_from_config,
 )
-from timeline_for_chatgpt_worker.processor import process_job
+from timeline_for_chatgpt_worker.processor import process_run
 from timeline_for_chatgpt_worker.refresh import build_config_check
 
 
-class ProcessJobTests(unittest.TestCase):
+class ProcessRunTests(unittest.TestCase):
     def test_cli_rejects_host_execution_without_explicit_test_override(self) -> None:
         with patch.dict(
             os.environ,
@@ -39,19 +42,7 @@ class ProcessJobTests(unittest.TestCase):
             root = Path(temp_dir)
             settings_path = root / "settings.json"
             example_path = root / "settings.example.json"
-            example_payload = {
-                "allowedExtensions": [".zip"],
-                "inputRoots": [
-                    {
-                        "id": "exports",
-                        "displayName": "Exports",
-                        "path": str(root / "inputs"),
-                        "enabled": True,
-                    }
-                ],
-                "outputRoot": {"path": str(root / "outputs")},
-                "stateRoot": {"path": str(root / "state")},
-            }
+            example_payload = {"outputRoot": str(root / "output")}
             example_path.write_text(json.dumps(example_payload), encoding="utf-8")
 
             with patch.dict(os.environ, {"TIMELINE_FOR_CHATGPT_ALLOW_HOST_CLI": "1"}):
@@ -134,19 +125,128 @@ class ProcessJobTests(unittest.TestCase):
             self.assertIn("duration_seconds", second_report["summary"])
             self.assertIn("fingerprint_seconds", second_report["items"][0]["timing"])
 
-    def test_config_check_reports_processable_input_count(self) -> None:
+    def test_config_check_reports_resolved_settings_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            input_root = root / "inputs"
-            input_root.mkdir()
-            write_sample_export(input_root / "export.zip", conversation_id="conv-check", title="Check")
-            config_path = write_runtime_config(root, input_root)
+            output_root = root / "output"
+            config_path = root / "settings.json"
+            config_path.write_text(json.dumps({"outputRoot": str(output_root)}), encoding="utf-8")
 
             report = build_config_check(config_path)
 
-            self.assertEqual(report["processable_input_count"], 1)
+            self.assertEqual(report["output_root"], str(output_root))
+            self.assertEqual(report["supported_settings_keys"], ["outputRoot"])
+            self.assertEqual(report["unsupported_settings_keys"], [])
             self.assertEqual(report["warnings"], [])
-            self.assertEqual(report["input_roots"][0]["id"], "exports")
+
+    def test_items_refresh_rebuilds_master_and_download_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            export_path = root / "chatgpt-export.zip"
+            write_thread_export_with_tool(export_path)
+            settings_path = root / "settings.json"
+            output_root = root / "output"
+            runs_root = root / ".app-data" / "runs"
+            settings_path.write_text(
+                json.dumps(
+                    {"outputRoot": str(output_root)}
+                ),
+                encoding="utf-8",
+            )
+
+            report = items_refresh_from_file(
+                file_path=export_path,
+                settings_path=settings_path,
+                download_to=root / "handoff",
+            )
+            listed = items_list_payload(settings_path)
+            copied = items_download_latest(settings_path, root / "second-handoff")
+
+            self.assertEqual(report["state"], "completed")
+            self.assertEqual(report["manifest"]["item_count"], 1)
+            self.assertEqual(listed["item_count"], 1)
+            timeline_path = output_root / "conv-master" / "timeline.json"
+            convert_path = output_root / "conv-master" / "convert_info.json"
+            self.assertTrue(timeline_path.exists())
+            self.assertTrue(convert_path.exists())
+            thread = json.loads(timeline_path.read_text(encoding="utf-8"))
+            convert_info = json.loads(convert_path.read_text(encoding="utf-8"))
+            self.assertEqual(thread["title"], "Final exported title")
+            self.assertNotIn("title_source", thread)
+            self.assertNotIn("title_history_available", thread)
+            self.assertEqual([message["role"] for message in thread["messages"]], ["system", "user", "assistant"])
+            self.assertEqual(convert_info["title"], "Final exported title")
+            self.assertIn("sha256", convert_info["source_export"])
+            download_zip_path = Path(str(report["current"]["download_zip_path"]))
+            self.assertTrue(download_zip_path.exists())
+            self.assertTrue(Path(str(report["current"]["copied_download_path"])).exists())
+            self.assertTrue(Path(str(copied["download_path"])).exists())
+            with zipfile.ZipFile(download_zip_path) as archive:
+                names = set(archive.namelist())
+                self.assertIn("README.md", names)
+                self.assertIn("items/conv-master/convert_info.json", names)
+                self.assertIn("items/conv-master/timeline.json", names)
+                self.assertNotIn("items/conv-master/thread.json", names)
+                self.assertNotIn("manifest.json", names)
+                readme = archive.read("README.md").decode("utf-8")
+            self.assertIn("TimelineForChatGPT", readme)
+            self.assertTrue((runs_root / "current.json").exists())
+            self.assertTrue((runs_root / "refresh-history.jsonl").exists())
+
+    def test_items_list_paginates_latest_first(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            settings_path = root / "settings.json"
+            output_root = root / "output"
+            output_root.mkdir()
+            settings_path.write_text(json.dumps({"outputRoot": str(output_root)}), encoding="utf-8")
+            (output_root / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "application": "TimelineForChatGPT",
+                        "item_count": 3,
+                        "items": [
+                            {
+                                "conversation_id": "old",
+                                "title": "Old",
+                                "created_at": "2026-01-01T00:00:00+00:00",
+                                "updated_at": "2026-01-01T00:01:00+00:00",
+                            },
+                            {
+                                "conversation_id": "new",
+                                "title": "New",
+                                "created_at": "2026-01-03T00:00:00+00:00",
+                                "updated_at": "2026-01-03T00:01:00+00:00",
+                            },
+                            {
+                                "conversation_id": "middle",
+                                "title": "Middle",
+                                "created_at": "2026-01-02T00:00:00+00:00",
+                                "updated_at": "2026-01-02T00:01:00+00:00",
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            first_page = items_list_payload(settings_path, page=1, page_size=2)
+            second_page = items_list_payload(settings_path, page=2, page_size=2)
+            default_items = items_list_payload(settings_path)
+            all_items = items_list_payload(settings_path, include_all=True)
+
+            self.assertEqual([item["conversation_id"] for item in default_items["items"]], ["new", "middle", "old"])
+            self.assertEqual([item["conversation_id"] for item in all_items["items"]], ["new", "middle", "old"])
+            self.assertEqual([item["conversation_id"] for item in first_page["items"]], ["new", "middle"])
+            self.assertEqual([item["conversation_id"] for item in second_page["items"]], ["old"])
+            self.assertEqual(default_items["pagination"]["mode"], "all")
+            self.assertEqual(first_page["pagination"]["page"], 1)
+            self.assertEqual(first_page["pagination"]["page_size"], 2)
+            self.assertEqual(first_page["pagination"]["total_items"], 3)
+            self.assertEqual(first_page["pagination"]["total_pages"], 2)
+            self.assertTrue(first_page["pagination"]["has_next"])
+            self.assertFalse(second_page["pagination"]["has_next"])
 
     def test_refresh_reports_missing_inputs_without_deleting_state(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -224,7 +324,7 @@ class ProcessJobTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "No enabled inputRoots directories exist"):
                 refresh_from_config(config_path)
 
-    def test_cli_job_creation_processes_zip_without_copying_input(self) -> None:
+    def test_cli_run_creation_processes_zip_without_copying_input(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             source_dir = root / "source"
@@ -263,13 +363,13 @@ class ProcessJobTests(unittest.TestCase):
                 )
 
             output_root = root / "outputs"
-            run_dir = create_job_from_input(
+            run_dir = create_run_from_input(
                 input_path=upload_path,
                 output_root=output_root,
                 profile="timeline-default",
-                job_id="job-cli",
+                run_id="run-cli",
             )
-            process_job(run_dir)
+            process_run(run_dir)
 
             request = json.loads((run_dir / "request.json").read_text(encoding="utf-8"))
             status = json.loads((run_dir / "status.json").read_text(encoding="utf-8"))
@@ -277,7 +377,7 @@ class ProcessJobTests(unittest.TestCase):
             self.assertEqual(request["input_items"][0]["uploaded_path"], str(upload_path))
             self.assertTrue(upload_path.exists())
             self.assertEqual(status["state"], "completed")
-            self.assertTrue((run_dir / "job-cli.zip").exists())
+            self.assertTrue((run_dir / "run-cli.zip").exists())
 
     def test_archive_contains_final_run_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -322,11 +422,11 @@ class ProcessJobTests(unittest.TestCase):
                     ),
                 )
 
-            run_dir = root / "job-test"
+            run_dir = root / "run-test"
             run_dir.mkdir()
             request = {
                 "schema_version": 1,
-                "job_id": "job-test",
+                "run_id": "run-test",
                 "created_at": "2026-04-27T00:00:00+00:00",
                 "output_root_id": "runs",
                 "output_root_path": str(root),
@@ -347,13 +447,13 @@ class ProcessJobTests(unittest.TestCase):
             }
             (run_dir / "request.json").write_text(json.dumps(request), encoding="utf-8")
             (run_dir / "status.json").write_text(
-                json.dumps({"schema_version": 1, "job_id": "job-test", "state": "pending"}),
+                json.dumps({"schema_version": 1, "run_id": "run-test", "state": "pending"}),
                 encoding="utf-8",
             )
 
-            process_job(run_dir)
+            process_run(run_dir)
 
-            archive_path = run_dir / "job-test.zip"
+            archive_path = run_dir / "run-test.zip"
             with zipfile.ZipFile(archive_path) as archive:
                 status = json.loads(archive.read("status.json"))
                 result = json.loads(archive.read("result.json"))
@@ -434,6 +534,84 @@ def write_sample_export(path: Path, conversation_id: str, title: str) -> None:
                                     },
                                 },
                             }
+                        },
+                    }
+                ]
+            ),
+        )
+
+
+def write_thread_export_with_tool(path: Path) -> None:
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("export_manifest.json", "{}")
+        archive.writestr(
+            "conversations.json",
+            json.dumps(
+                [
+                    {
+                        "id": "conv-master",
+                        "conversation_id": "conv-master",
+                        "title": "Final exported title",
+                        "create_time": "2026-01-01T00:00:00Z",
+                        "update_time": "2026-01-01T00:03:00Z",
+                        "current_node": "n4",
+                        "mapping": {
+                            "n1": {
+                                "id": "n1",
+                                "parent": None,
+                                "children": ["n2"],
+                                "message": {
+                                    "id": "m-system",
+                                    "author": {"role": "system"},
+                                    "create_time": "2026-01-01T00:00:00Z",
+                                    "content": {
+                                        "content_type": "text",
+                                        "parts": ["system context"],
+                                    },
+                                },
+                            },
+                            "n2": {
+                                "id": "n2",
+                                "parent": "n1",
+                                "children": ["n3"],
+                                "message": {
+                                    "id": "m-user",
+                                    "author": {"role": "user"},
+                                    "create_time": "2026-01-01T00:01:00Z",
+                                    "content": {
+                                        "content_type": "text",
+                                        "parts": ["hello"],
+                                    },
+                                },
+                            },
+                            "n3": {
+                                "id": "n3",
+                                "parent": "n2",
+                                "children": ["n4"],
+                                "message": {
+                                    "id": "m-tool",
+                                    "author": {"role": "tool"},
+                                    "create_time": "2026-01-01T00:02:00Z",
+                                    "content": {
+                                        "content_type": "execution_output",
+                                        "parts": ["tool output"],
+                                    },
+                                },
+                            },
+                            "n4": {
+                                "id": "n4",
+                                "parent": "n3",
+                                "children": [],
+                                "message": {
+                                    "id": "m-assistant",
+                                    "author": {"role": "assistant"},
+                                    "create_time": "2026-01-01T00:03:00Z",
+                                    "content": {
+                                        "content_type": "text",
+                                        "parts": ["answer"],
+                                    },
+                                },
+                            },
                         },
                     }
                 ]

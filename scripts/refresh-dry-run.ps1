@@ -1,4 +1,4 @@
 . "$PSScriptRoot\common.ps1"
-Initialize-TimelineForChatGPTSettings
-& docker compose run --rm worker refresh --dry-run @args
-Exit-TimelineForChatGPTNativeCommand
+Set-TimelineForChatGPTRoot
+Write-Error "Directory refresh dry-run is not part of the current TimelineForChatGPT workflow. Use .\cli.ps1 items refresh --file <ChatGPT-export.zip>."
+exit 2

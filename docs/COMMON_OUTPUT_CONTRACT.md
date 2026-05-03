@@ -26,19 +26,15 @@ That means:
 
 Both tools should keep the same top-level run model:
 
-- one job creates one run directory
+- one refresh or direct process command creates one run directory
 - the CLI writes `request.json`
 - the worker owns `status.json`, `result.json`, and `manifest.json`
 - the worker also writes human-readable deliverables and a final ZIP
 - refresh-style tools may add a timestamped refresh report above individual run directories
 
-Current naming differs slightly:
+Current run directory naming:
 
-- `video2timeline` uses `run-*`
-- `TimelineForChatGPT` currently uses `job-*`
-
-That difference is acceptable for now.
-The important part is the internal file contract.
+- `run-*`
 
 ## Shared Core Files
 
@@ -49,7 +45,7 @@ These files are the common inspection surface.
 Common fields:
 
 - `schema_version`
-- `job_id`
+- `run_id`
 - `created_at`
 - `output_root_id`
 - `output_root_path`
@@ -76,7 +72,7 @@ Rule:
 Common fields:
 
 - `schema_version`
-- `job_id`
+- `run_id`
 - `state`
 - `current_stage`
 - `message`
@@ -111,7 +107,7 @@ Rule:
 Common fields:
 
 - `schema_version`
-- `job_id`
+- `run_id`
 - `state`
 - `run_dir`
 - `output_root_id`
@@ -258,7 +254,7 @@ without caring how the underlying parser worked.
 What is shared now:
 
 - run contract shape
-- job flow
+- run flow
 - output naming philosophy
 - timeline-oriented deliverables
 

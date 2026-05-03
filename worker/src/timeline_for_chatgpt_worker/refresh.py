@@ -22,7 +22,9 @@ class InputRootConfig:
 class RuntimeConfig:
     input_roots: list[InputRootConfig]
     output_root: Path
+    run_root: Path
     state_root: Path
+    cache_root: Path
     allowed_extensions: list[str]
     recursive: bool = False
     profile: str = "timeline-default"
@@ -56,45 +58,50 @@ def load_runtime_config(path: Path | None = None) -> RuntimeConfig:
     settings_path = (path or default_settings_path()).expanduser()
     payload = load_json(settings_path)
     base_dir = settings_path.parent
+    use_environment_roots = is_default_settings_path(settings_path)
 
-    allowed_extensions = [
-        normalize_extension(value)
-        for value in payload.get("allowedExtensions", [".zip"])
-    ]
-    refresh_payload = payload.get("refresh") or {}
-    recursive = bool(refresh_payload.get("recursive", False))
-    profile = str(refresh_payload.get("profile") or payload.get("profile") or "timeline-default")
-
-    input_roots = [
-        InputRootConfig(
-            root_id=str(item.get("id") or slugify(str(item.get("path") or "input"))),
-            display_name=str(item.get("displayName") or item.get("id") or item.get("path") or "Input"),
-            path=resolve_config_path(str(item["path"]), base_dir),
-            enabled=bool(item.get("enabled", True)),
-        )
-        for item in payload.get("inputRoots", [])
-        if item.get("path")
-    ]
-    if not input_roots:
-        raise ValueError("runtime config must include at least one inputRoots entry")
-
-    output_root = output_root_from_config(payload, base_dir)
-    state_root = state_root_from_config(payload, output_root, base_dir)
+    output_root = output_root_from_config(payload, base_dir, use_environment_roots=use_environment_roots)
+    legacy_input_roots = input_roots_from_config(payload, base_dir)
+    legacy_runtime_root = output_root if legacy_input_roots and not use_environment_roots else None
+    run_root = internal_runtime_path(
+        "TIMELINE_FOR_CHATGPT_OUTPUTS_ROOT",
+        docker_default="/shared/app-data/runs",
+        host_default=legacy_runtime_root or base_dir / ".app-data" / "runs",
+        base_dir=base_dir,
+        use_environment_roots=use_environment_roots,
+    )
+    state_root = internal_runtime_path(
+        "TIMELINE_FOR_CHATGPT_STATE_ROOT",
+        docker_default="/shared/app-data/state",
+        host_default=legacy_path_from_config(payload.get("stateRoot"), base_dir) or base_dir / ".app-data" / "state",
+        base_dir=base_dir,
+        use_environment_roots=use_environment_roots,
+    )
+    cache_root = internal_runtime_path(
+        "TIMELINE_FOR_CHATGPT_CACHE_ROOT",
+        docker_default="/shared/cache",
+        host_default=legacy_path_from_config(payload.get("cacheRoot"), base_dir) or base_dir / ".app-data" / "cache",
+        base_dir=base_dir,
+        use_environment_roots=use_environment_roots,
+    )
+    refresh_payload = payload.get("refresh") if isinstance(payload.get("refresh"), dict) else {}
 
     return RuntimeConfig(
-        input_roots=input_roots,
         output_root=output_root,
+        input_roots=legacy_input_roots,
+        run_root=run_root,
         state_root=state_root,
-        allowed_extensions=allowed_extensions,
-        recursive=recursive,
-        profile=profile,
+        cache_root=cache_root,
+        allowed_extensions=allowed_extensions_from_config(payload),
+        recursive=bool(refresh_payload.get("recursive", False)),
+        profile=str(refresh_payload.get("profile") or "timeline-default"),
     )
 
 
-def validate_runtime_config(config: RuntimeConfig) -> list[str]:
+def validate_runtime_config(config: RuntimeConfig, require_input_roots: bool = True) -> list[str]:
     warnings: list[str] = []
     enabled_roots = [input_root for input_root in config.input_roots if input_root.enabled]
-    if not enabled_roots:
+    if require_input_roots and not enabled_roots:
         raise ValueError("No enabled inputRoots entries are configured.")
 
     existing_roots = [
@@ -109,11 +116,13 @@ def validate_runtime_config(config: RuntimeConfig) -> list[str]:
     ]
     for input_root in missing_roots:
         warnings.append(f"Input root is missing or not a directory: {input_root.root_id}={input_root.path}")
-    if not existing_roots:
+    if require_input_roots and not existing_roots:
         raise ValueError("No enabled inputRoots directories exist.")
 
     ensure_writable_dir(config.output_root, "outputRoot")
+    ensure_writable_dir(config.run_root, "runRoot")
     ensure_writable_dir(config.state_root, "stateRoot")
+    ensure_writable_dir(config.cache_root, "cacheRoot")
 
     if config.recursive:
         for input_root in existing_roots:
@@ -132,32 +141,29 @@ def validate_runtime_config(config: RuntimeConfig) -> list[str]:
 
 
 def build_config_check(config_path: Path | None = None) -> dict[str, Any]:
-    config = load_runtime_config(config_path)
-    warnings = validate_runtime_config(config)
-    discovered = discover_inputs(config)
+    settings_path = config_path or default_settings_path()
+    payload = load_json(settings_path)
+    if not isinstance(payload, dict):
+        raise ValueError(f"settings must be a JSON object: {settings_path}")
+    config = load_runtime_config(settings_path)
+    warnings = validate_runtime_config(config, require_input_roots=False)
+    unsupported_keys = sorted(key for key in payload if key != "outputRoot")
+    for key in unsupported_keys:
+        warnings.append(f"Ignoring unsupported settings key: {key}")
     return {
         "schema_version": 1,
         "checked_at": now_iso(),
-        "settings_path": str(config_path or default_settings_path()),
-        "config_path": str(config_path or default_settings_path()),
+        "settings_path": str(settings_path),
+        "settings_exists": settings_path.exists(),
         "output_root": str(config.output_root),
+        "output_root_exists": config.output_root.exists(),
+        "output_root_is_dir": config.output_root.is_dir(),
+        "run_root": str(config.run_root),
         "state_root": str(config.state_root),
-        "recursive": config.recursive,
-        "profile": config.profile,
-        "allowed_extensions": config.allowed_extensions,
+        "cache_root": str(config.cache_root),
+        "supported_settings_keys": ["outputRoot"],
+        "unsupported_settings_keys": unsupported_keys,
         "warnings": warnings,
-        "input_roots": [
-            {
-                "id": input_root.root_id,
-                "display_name": input_root.display_name,
-                "path": str(input_root.path),
-                "enabled": input_root.enabled,
-                "exists": input_root.path.exists(),
-                "is_dir": input_root.path.is_dir(),
-            }
-            for input_root in config.input_roots
-        ],
-        "processable_input_count": len(discovered),
     }
 
 
@@ -203,27 +209,80 @@ def is_relative_to(path: Path, parent: Path) -> bool:
     return True
 
 
-def output_root_from_config(payload: dict[str, Any], base_dir: Path) -> Path:
+def is_default_settings_path(settings_path: Path) -> bool:
+    try:
+        return settings_path.expanduser().resolve() == default_settings_path().expanduser().resolve()
+    except OSError:
+        return settings_path.expanduser() == default_settings_path().expanduser()
+
+
+def output_root_from_config(payload: dict[str, Any], base_dir: Path, use_environment_roots: bool = True) -> Path:
+    configured = os.environ.get("TIMELINE_FOR_CHATGPT_OUTPUT_ROOT") if use_environment_roots else None
+    if configured:
+        return resolve_config_path(configured, base_dir)
     output_root = payload.get("outputRoot")
-    if isinstance(output_root, dict) and output_root.get("path"):
-        return resolve_config_path(str(output_root["path"]), base_dir)
-    if isinstance(output_root, str):
-        return resolve_config_path(output_root, base_dir)
-
-    for item in payload.get("outputRoots", []):
-        if item.get("enabled", True) and item.get("path"):
-            return resolve_config_path(str(item["path"]), base_dir)
-
-    raise ValueError("runtime config must include outputRoot or at least one enabled outputRoots entry")
+    if isinstance(output_root, dict):
+        output_root = output_root.get("path")
+    if not isinstance(output_root, str) or not output_root.strip():
+        raise ValueError("settings.json must include outputRoot as a path string")
+    return resolve_config_path(output_root, base_dir)
 
 
-def state_root_from_config(payload: dict[str, Any], output_root: Path, base_dir: Path) -> Path:
-    state_root = payload.get("stateRoot")
-    if isinstance(state_root, dict) and state_root.get("path"):
-        return resolve_config_path(str(state_root["path"]), base_dir)
-    if isinstance(state_root, str):
-        return resolve_config_path(state_root, base_dir)
-    return output_root / ".state"
+def input_roots_from_config(payload: dict[str, Any], base_dir: Path) -> list[InputRootConfig]:
+    roots = payload.get("inputRoots")
+    if not isinstance(roots, list):
+        return []
+    parsed: list[InputRootConfig] = []
+    for index, entry in enumerate(roots, start=1):
+        if not isinstance(entry, dict):
+            continue
+        raw_path = entry.get("path")
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            continue
+        root_id = str(entry.get("id") or f"input-{index:04d}")
+        parsed.append(
+            InputRootConfig(
+                root_id=root_id,
+                display_name=str(entry.get("displayName") or root_id),
+                path=resolve_config_path(raw_path, base_dir),
+                enabled=bool(entry.get("enabled", True)),
+            )
+        )
+    return parsed
+
+
+def allowed_extensions_from_config(payload: dict[str, Any]) -> list[str]:
+    configured = payload.get("allowedExtensions")
+    if not isinstance(configured, list) or not configured:
+        return [".zip"]
+    return sorted({normalize_extension(item) for item in configured})
+
+
+def legacy_path_from_config(value: Any, base_dir: Path) -> Path | None:
+    if isinstance(value, dict):
+        value = value.get("path")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return resolve_config_path(value, base_dir)
+
+
+def internal_runtime_path(
+    env_name: str,
+    docker_default: str,
+    host_default: Path,
+    base_dir: Path,
+    use_environment_roots: bool = True,
+) -> Path:
+    configured = os.environ.get(env_name) if use_environment_roots else None
+    if configured:
+        return resolve_config_path(configured, base_dir)
+    if use_environment_roots and (truthy_env("TIMELINE_FOR_CHATGPT_DOCKER") or Path("/.dockerenv").exists()):
+        return resolve_config_path(docker_default, base_dir)
+    return host_default.expanduser().resolve()
+
+
+def truthy_env(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def normalize_extension(value: Any) -> str:
@@ -356,8 +415,8 @@ def build_refresh_latest_markdown(report: dict[str, Any]) -> str:
         lines.append(f"- Input: `{input_path}`")
         if item.get("input_root_id"):
             lines.append(f"- Input root: `{item['input_root_id']}`")
-        if item.get("job_id"):
-            lines.append(f"- Job: `{item['job_id']}`")
+        if item.get("run_id"):
+            lines.append(f"- Run ID: `{item['run_id']}`")
         if item.get("run_dir"):
             lines.append(f"- Run: `{item['run_dir']}`")
         if item.get("previous_run_dir"):
@@ -405,10 +464,10 @@ def build_refresh_index(state: dict[str, Any], report: dict[str, Any]) -> dict[s
                 "input_root_id": state_item.get("input_root_id"),
                 "display_name": state_item.get("display_name"),
                 "result_state": state_item.get("result_state"),
-                "job_id": state_item.get("job_id"),
+                "run_id": state_item.get("run_id"),
                 "run_dir": state_item.get("run_dir"),
                 "updated_at": state_item.get("updated_at"),
-                "latest_success_job_id": state_item.get("latest_success_job_id"),
+                "latest_success_run_id": state_item.get("latest_success_run_id"),
                 "latest_success_run_dir": state_item.get("latest_success_run_dir"),
                 "latest_success_at": state_item.get("latest_success_at"),
                 "latest_refresh_status": report_item.get("status"),
@@ -492,11 +551,11 @@ def write_refresh_index(output_root: Path, state: dict[str, Any], report: dict[s
     return json_path, markdown_path
 
 
-def build_refresh_job_id(root_id: str, source_path: Path, fingerprint: dict[str, Any], started_at: str) -> str:
+def build_refresh_run_id(root_id: str, source_path: Path, fingerprint: dict[str, Any], started_at: str) -> str:
     stamp = timestamp_token(started_at)
     name = slugify(source_path.stem)[:32]
     token = str(fingerprint.get("sha256") or "unknown")[:12]
-    return f"job-{stamp}-{slugify(root_id)}-{name}-{token}"
+    return f"run-{stamp}-{slugify(root_id)}-{name}-{token}"
 
 
 def timestamp_token(value: str) -> str:

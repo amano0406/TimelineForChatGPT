@@ -4,6 +4,6 @@ param(
 )
 
 . "$PSScriptRoot\common.ps1"
-Initialize-TimelineForChatGPTSettings
-& docker compose run --rm worker process "/workspace/data/inputs/$FileName" --output-root /workspace/data/outputs
+Set-TimelineForChatGPTRoot
+& (Join-Path $PSScriptRoot "..\cli.ps1") items refresh --file $FileName
 Exit-TimelineForChatGPTNativeCommand

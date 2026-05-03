@@ -4,7 +4,7 @@ import os
 import traceback
 from pathlib import Path
 
-from .contracts import JobRequest, JobResult, JobStatus
+from .contracts import RunRequest, RunResult, RunStatus
 from .fs_utils import append_log, ensure_dir, load_json, now_iso, write_json
 from .parser import build_archive, normalize_export
 
@@ -19,7 +19,7 @@ def iter_pending_runs() -> list[Path]:
         return []
 
     rows: list[Path] = []
-    for run_dir in sorted(root.glob("job-*")):
+    for run_dir in sorted(root.glob("run-*")):
         status_path = run_dir / "status.json"
         if not status_path.exists():
             continue
@@ -29,19 +29,19 @@ def iter_pending_runs() -> list[Path]:
     return rows
 
 
-def process_pending_jobs() -> int:
+def process_pending_runs() -> int:
     processed = 0
     for run_dir in iter_pending_runs():
-        process_job(run_dir)
+        process_run(run_dir)
         processed += 1
     return processed
 
 
-def process_job(run_dir: Path) -> None:
-    request = JobRequest.from_dict(load_json(run_dir / "request.json"))
-    status = JobStatus(job_id=request.job_id, state="running", current_stage="starting", started_at=now_iso(), updated_at=now_iso())
-    result = JobResult(
-        job_id=request.job_id,
+def process_run(run_dir: Path) -> None:
+    request = RunRequest.from_dict(load_json(run_dir / "request.json"))
+    status = RunStatus(run_id=request.run_id, state="running", current_stage="starting", started_at=now_iso(), updated_at=now_iso())
+    result = RunResult(
+        run_id=request.run_id,
         state="running",
         run_dir=str(run_dir),
         output_root_id=request.output_root_id,
@@ -49,7 +49,7 @@ def process_job(run_dir: Path) -> None:
     )
 
     log_path = ensure_dir(run_dir / "logs") / "worker.log"
-    append_log(log_path, f"[{now_iso()}] starting {request.job_id}")
+    append_log(log_path, f"[{now_iso()}] starting {request.run_id}")
 
     try:
         status.message = "Preparing export input."
@@ -105,11 +105,11 @@ def process_job(run_dir: Path) -> None:
         result.error_count = 0
         result.batch_count = int(normalized["batch_count"])
         result.conversation_index_path = normalized["conversation_index_path"]
-        result.archive_path = str(run_dir / f"{request.job_id}.zip")
+        result.archive_path = str(run_dir / f"{request.run_id}.zip")
 
         manifest = {
             "schema_version": 1,
-            "job_id": request.job_id,
+            "run_id": request.run_id,
             "generated_at": now_iso(),
             "items": normalized["manifest_items"],
         }
@@ -117,8 +117,8 @@ def process_job(run_dir: Path) -> None:
         write_json(run_dir / "manifest.json", manifest)
         write_json(run_dir / "status.json", status.to_dict())
         write_json(run_dir / "result.json", result.to_dict())
-        build_archive(run_dir, request.job_id, normalized["conversation_rows"], run_dir / "llm")
-        append_log(log_path, f"[{now_iso()}] completed {request.job_id}")
+        build_archive(run_dir, request.run_id, normalized["conversation_rows"], run_dir / "llm")
+        append_log(log_path, f"[{now_iso()}] completed {request.run_id}")
     except Exception as exc:  # noqa: BLE001
         status.state = "failed"
         status.current_stage = "failed"
@@ -131,5 +131,5 @@ def process_job(run_dir: Path) -> None:
         result.warnings.append(str(exc))
         write_json(run_dir / "status.json", status.to_dict())
         write_json(run_dir / "result.json", result.to_dict())
-        append_log(log_path, f"[{now_iso()}] failed {request.job_id}")
+        append_log(log_path, f"[{now_iso()}] failed {request.run_id}")
         append_log(log_path, traceback.format_exc())

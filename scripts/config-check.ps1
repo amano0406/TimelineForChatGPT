@@ -1,4 +1,4 @@
 . "$PSScriptRoot\common.ps1"
-Initialize-TimelineForChatGPTSettings
-& docker compose run --rm worker config-check @args
+Set-TimelineForChatGPTRoot
+& (Join-Path $PSScriptRoot "..\cli.ps1") config-check @args
 Exit-TimelineForChatGPTNativeCommand

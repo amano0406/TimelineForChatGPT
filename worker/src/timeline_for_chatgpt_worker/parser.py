@@ -10,15 +10,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from .contracts import JobRequest
+from .contracts import RunRequest
 from .fs_utils import ensure_dir, load_json, slugify, write_json, write_jsonl
 
 
-def prepare_export_root(run_dir: Path, request: JobRequest) -> tuple[Path, str, Path | None]:
+def prepare_export_root(run_dir: Path, request: RunRequest) -> tuple[Path, str, Path | None]:
     input_item = request.input_items[0]
     uploaded_path = Path(input_item.uploaded_path or "")
     if input_item.source_kind == "upload_zip":
-        extraction_root = build_short_extraction_root(uploaded_path, request.job_id)
+        extraction_root = build_short_extraction_root(uploaded_path, request.run_id)
         if extraction_root.exists():
             shutil.rmtree(extraction_root, ignore_errors=True)
         ensure_dir(extraction_root)
@@ -44,18 +44,18 @@ def prepare_export_root(run_dir: Path, request: JobRequest) -> tuple[Path, str, 
     raise ValueError(f"Unsupported input kind: {input_item.source_kind}")
 
 
-def build_short_extraction_root(uploaded_path: Path, job_id: str) -> Path:
-    job_token = job_id.rsplit("-", 1)[-1] or "job"
+def build_short_extraction_root(uploaded_path: Path, run_id: str) -> Path:
+    run_token = run_id.rsplit("-", 1)[-1] or "run"
     anchor = uploaded_path.anchor.rstrip("\\/")
     if anchor.endswith(":"):
-        return Path(f"{anchor}\\") / "t" / job_token
+        return Path(f"{anchor}\\") / "t" / run_token
 
     temp_root = Path(tempfile.gettempdir())
     temp_anchor = temp_root.anchor.rstrip("\\/")
     if temp_anchor.endswith(":"):
-        return Path(f"{temp_anchor}\\") / "t" / job_token
+        return Path(f"{temp_anchor}\\") / "t" / run_token
 
-    return temp_root / "t" / job_token
+    return temp_root / "t" / run_token
 
 
 def resolve_export_root(root: Path) -> Path:
@@ -98,7 +98,7 @@ def load_conversations(export_root: Path) -> tuple[list[dict[str, Any]], int]:
 
 def normalize_export(
     run_dir: Path,
-    request: JobRequest,
+    request: RunRequest,
     on_progress: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     export_root, input_name, cleanup_root = prepare_export_root(run_dir, request)
@@ -184,7 +184,7 @@ def normalize_export(
 
         write_jsonl(run_dir / "conversation_index.jsonl", conversation_rows)
         export_summary = {
-            "job_id": request.job_id,
+            "run_id": request.run_id,
             "input_name": input_name,
             "conversation_files": conversation_file_count,
             "total_conversations": int(analysis_summary.get("total_conversations", len(conversation_rows))),
@@ -208,7 +208,7 @@ def normalize_export(
             )
 
         batch_count = build_llm_pack(llm_root, conversation_rows, conversations_root)
-        archive_path = run_dir / f"{request.job_id}.zip"
+        archive_path = run_dir / f"{request.run_id}.zip"
 
         return {
             "export_summary": export_summary,
@@ -235,7 +235,7 @@ def try_load_analysis_summary(export_root: Path) -> dict[str, Any]:
 
 def normalize_conversation(
     conversation: dict[str, Any],
-    request: JobRequest,
+    request: RunRequest,
     export_root: Path | None = None,
 ) -> dict[str, Any]:
     conversation_id = str(conversation.get("conversation_id") or conversation.get("id") or "")
@@ -785,8 +785,8 @@ def build_llm_pack(llm_root: Path, conversation_rows: list[dict[str, Any]], conv
     return batch_count
 
 
-def build_archive(run_dir: Path, job_id: str, conversation_rows: list[dict[str, Any]], llm_root: Path) -> Path:
-    archive_path = run_dir / f"{job_id}.zip"
+def build_archive(run_dir: Path, run_id: str, conversation_rows: list[dict[str, Any]], llm_root: Path) -> Path:
+    archive_path = run_dir / f"{run_id}.zip"
     if archive_path.exists():
         archive_path.unlink()
 
@@ -797,7 +797,7 @@ def build_archive(run_dir: Path, job_id: str, conversation_rows: list[dict[str, 
                 [
                     "# TimelineForChatGPT Export",
                     "",
-                    f"- Job ID: `{job_id}`",
+                    f"- Run ID: `{run_id}`",
                     "- Main folder: `timelines/`",
                     "- `conversation_index.jsonl` provides the summary catalog.",
                     "",

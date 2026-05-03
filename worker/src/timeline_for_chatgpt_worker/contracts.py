@@ -40,9 +40,9 @@ class ParserOptions:
 
 
 @dataclass
-class JobRequest:
+class RunRequest:
     schema_version: int
-    job_id: str
+    run_id: str
     created_at: str
     output_root_id: str
     output_root_path: str
@@ -52,10 +52,10 @@ class JobRequest:
     input_items: list[InputItem]
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "JobRequest":
+    def from_dict(cls, payload: dict[str, Any]) -> "RunRequest":
         return cls(
             schema_version=int(payload.get("schema_version", 1)),
-            job_id=str(payload["job_id"]),
+            run_id=str(payload["run_id"]),
             created_at=str(payload["created_at"]),
             output_root_id=str(payload["output_root_id"]),
             output_root_path=str(payload["output_root_path"]),
@@ -67,9 +67,9 @@ class JobRequest:
 
 
 @dataclass
-class JobStatus:
+class RunStatus:
     schema_version: int = 1
-    job_id: str = ""
+    run_id: str = ""
     state: str = "pending"
     current_stage: str = "queued"
     message: str = ""
@@ -90,9 +90,9 @@ class JobStatus:
 
 
 @dataclass
-class JobResult:
+class RunResult:
     schema_version: int = 1
-    job_id: str = ""
+    run_id: str = ""
     state: str = "pending"
     run_dir: str = ""
     output_root_id: str = ""
