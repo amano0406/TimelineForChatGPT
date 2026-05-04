@@ -171,7 +171,6 @@ Windows では `cli.bat` を公開入口にします。PowerShell wrapper 経由
 - `items list` は `updated_at`, `ended_at_utc`, `created_at`, `started_at_utc`, `conversation_id` の優先順で新しいもの順に返します。
 - `items list` の既定は全件取得です。
 - 1ページだけ必要な場合は `--page` または `--page-size` を指定します。ページング時の既定は `--page 1 --page-size 100` です。
-- 全件取得は既定動作なので、`--all` オプションはありません。
 - `items list` は現在の `manifest.json` を直接読みます。別の一覧 cache は使いません。
 - `items download --to` は現在の出力から ZIP を作ります。既存ファイルは `--overwrite` なしでは上書きしません。
 - `--download-to` は refresh と ZIP コピーをまとめて行います。

@@ -168,7 +168,7 @@ Notes:
 
 - `items refresh --file` clears and rebuilds the output from the specified ZIP.
 - `--file` may point outside this repository when using `cli.bat`; the wrapper copies the file into a temporary Docker path and leaves the original untouched.
-- `items list` sorts conversations latest-first by `updated_at`, then `ended_at_utc`, `created_at`, `started_at_utc`, and `conversation_id`. The default is all items. Use `--page` or `--page-size` when one page is needed; paging defaults to `--page 1 --page-size 100`. There is no `--all` option because all items are already the default. It reads the current `manifest.json` directly and does not use a separate list cache.
+- `items list` sorts conversations latest-first by `updated_at`, then `ended_at_utc`, `created_at`, `started_at_utc`, and `conversation_id`. The default is every item. Use `--page` or `--page-size` when one page is needed; paging defaults to `--page 1 --page-size 100`. It reads the current `manifest.json` directly and does not use a separate list cache.
 - `items download --to` builds a ZIP from the current output and does not overwrite an existing file unless `--overwrite` is passed.
 - `--download-to` on `items refresh` refreshes and copies the ZIP in one command.
 - `runs` commands are diagnostic-only because run directories are Docker-managed runtime files.
