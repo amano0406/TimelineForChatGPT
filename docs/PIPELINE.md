@@ -1,75 +1,53 @@
 # Pipeline
 
-## 1. Request Creation
+[Back to README](../README.md)
 
-For normal Windows operation, the `cli.bat` entrypoint invokes `items refresh --file` through the PowerShell wrapper.
-The input ZIP is specified explicitly and is copied into a temporary container path for the managed Docker Compose worker.
-The command rejects overlapping refresh runs with an internal Docker state lock.
+## 1. Refresh Request
 
-For each refresh, the Docker CLI writes `request.json` into a new timestamped `run-*` directory under the internal `app-data` volume.
-Direct `docker compose ...` usage remains available as the WSL/developer backdoor.
+The user runs:
 
-## 2. Worker Execution
+```powershell
+.\cli.bat items refresh --file C:\path\chatgpt-export.zip --json
+```
 
-The Python worker processes the run immediately through `items refresh --file` or `process`.
-It can also poll the internal run root for pending runs whose `status.json` is still `pending`.
-Host Python CLI execution is blocked for normal operation and is only allowed when `TIMELINE_FOR_CHATGPT_ALLOW_HOST_CLI=1` is set for tests.
+The wrapper passes the ZIP to the Docker Compose-managed worker through temporary Docker staging.
 
-## 3. Extract
+## 2. Extract
 
-For ZIP input, the worker extracts the archive into `input/extracted/` and locates the export root.
-
-## 4. Conversation Discovery
-
-The worker reads:
+The worker extracts the ZIP and locates ChatGPT export JSON files such as:
 
 - `conversations.json`
 - `conversations-*.json`
 
-when present.
+## 3. Normalize Conversations
 
-## 5. Normalization
+For each conversation, the worker reads the conversation graph, follows the exported current path, and extracts message rows, roles, timestamps, text, title, and attachment references when available.
 
-The worker:
+## 4. Write Run Artifacts
 
-- reads `mapping`
-- follows `current_node`
-- builds a main-branch message list
-- extracts text and attachment references
+The Docker-managed run workspace writes processing artifacts such as:
 
-## 6. Render
-
-The run workspace writes:
-
+- `request.json`
+- `status.json`
+- `result.json`
+- `manifest.json`
+- `export_summary.json`
 - `conversation_index.jsonl`
-- `conversations/<id>/timeline.md`
-- `llm/conversation_corpus-YYYY-MM.jsonl`
 
-The final output root writes:
+## 5. Rebuild Current Output
+
+The configured `outputRoot` is rebuilt from the supplied ZIP. The current output contains:
 
 - `manifest.json`
 - `<conversation-id>/convert_info.json`
 - `<conversation-id>/timeline.json`
 
-## 7. Package
+## 6. Package
 
-The worker creates a run archive containing:
+`items download --to` packages the current output into a handoff ZIP. `items refresh --download-to` refreshes and copies that ZIP in one command.
 
-- `conversation_index.jsonl`
-- `timelines/*.md`
-- `llm/*`
+## Failure Model
 
-`items refresh --file` also creates a handoff ZIP from the final output root. That ZIP contains:
-
-- `README.md`
-- `items/<conversation-id>/convert_info.json`
-- `items/<conversation-id>/timeline.json`
-
-## 8. Failure Model
-
-- conversation-level failures should not block unrelated conversations
-- run-level failures still write `status.json` and `result.json`
-- `logs/worker.log` is the primary execution trace
-- the latest completed refresh is recorded in internal `current.json`
-- refresh history is appended to internal `refresh-history.jsonl`
-- the final output root is rebuilt from scratch for the supplied ZIP
+- ZIP-level failures stop the refresh.
+- Conversation-level failures are recorded without changing the source ZIP.
+- Run diagnostics are written to Docker-managed run state.
