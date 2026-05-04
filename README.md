@@ -17,6 +17,22 @@ Detailed internal specs and design notes live under `docs/`. For normal operatio
 
 The `README.md` inside a download ZIP is an artifact README that explains the generated package. It has a different role from this root README.
 
+## Product Role And Principles
+
+`TimelineForChatGPT` is the Timeline-family entrypoint for converting a ChatGPT export ZIP into conversation-scoped Timeline artifacts.
+
+Its core responsibility is to read ChatGPT-specific export structure, conversation graphs, message rows, and attachment references without flattening away their source meaning, then produce per-conversation artifacts that downstream Timeline products or LLM workflows can reuse.
+
+The design principles are:
+
+- Treat the supplied export ZIP as the source of truth and rebuild the current `outputRoot` from that ZIP.
+- Preserve conversation order, message order, roles, timestamps, final exported title, and attachment references where available.
+- Prioritize structured handoff artifacts over summarization or date-range filtering.
+- Keep the product CLI-only, with Windows CLI entrypoints and a Docker Compose-managed worker as the normal path.
+- Keep processing local-first and never delete, move, rename, or overwrite the source ZIP.
+
+Within the Timeline family, this product plays the same adapter role that `TimelineForAudio` and `TimelineForVideo` play for media inputs. It owns the ChatGPT export boundary; global timeline rendering, date filtering, cross-source search, and richer summarization belong downstream.
+
 ## Quick Start
 
 ```powershell
@@ -204,7 +220,7 @@ Local `cli.ps1` refresh / list / download smoke test:
 python tests/smoke/run_cli_ps1_download.py
 ```
 
-This smoke test does not rewrite the normal `settings.json`. It creates a temporary settings file, a dedicated Docker Compose project, and temporary app-data/cache/output directories under `C:\TimelineData\tfcg-cli-ps1-smoke-*`, then removes them unless `--preserve-output` is passed. It covers a long ZIP filename, spaces in the input path, `items refresh --download-to`, default-all and paged `items list`, and `items download`.
+This smoke test does not rewrite the normal `settings.json`. It creates a temporary settings file, a dedicated Docker Compose project, and temporary app-data/cache/output directories under `C:\TimelineData\tfcg-cli-ps1-smoke-*`, then removes them unless `--preserve-output` is passed. It covers a long ZIP filename, spaces in the input path, `items refresh --download-to`, default-all and paged `items list`, `items download`, rejection of accidental existing-ZIP overwrite, and temporary Docker container / volume cleanup.
 
 Include that smoke test after the Docker unit tests:
 

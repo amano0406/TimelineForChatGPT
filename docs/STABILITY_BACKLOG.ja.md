@@ -12,18 +12,20 @@
 - smoke test は `items refresh --file ... --download-to ...` と `items download --to ...` の両方を確認する。
 - smoke test は `items list` の全件既定と page / page-size 指定を確認する。
 - smoke test は長い ZIP ファイル名と空白を含む path を Docker wrapper 経由で確認する。
+- smoke test は既存 download ZIP を `--overwrite` なしで誤上書きしないことを確認する。
 - テスト用の一時 Docker project / volume / output directory は通常削除される。
+- smoke test は一時 Docker container / volume が残らないことを確認する。
 
 ## 優先度高
 
 1. 入力 ZIP の異常系 fixture を増やす。
    corrupted ZIP、`conversations.json` 欠落、空 conversation、壊れた `mapping`、複数 conversation、`conversations-*.json` を分けて確認する。
 
-2. download 先の既存 ZIP without `--overwrite` を smoke test に追加する。
-   誤上書き防止の contract を実運用 wrapper 経由で確認する。
+2. 失敗時 contract を固める。
+   run-level failure で `status.json` / `result.json` / `logs/worker.log` に診断可能な情報が残ることを確認する。
 
-3. smoke cleanup の Docker 側検証を明示化する。
-   smoke 完了後に Compose project、volume、temporary image が残らないことを検証する。
+3. `manifest.json` / `timeline.json` / `convert_info.json` の schema 互換チェックを追加する。
+   破壊的なフィールド削除や `thread.json` 復活をテストで検出する。
 
 ## 優先度中
 
@@ -36,11 +38,11 @@
 3. attachment reference の fixture を増やす。
    画像、PDF、音声、存在しない添付参照、同名ファイル、深い相対 path を確認する。
 
-4. `manifest.json` / `timeline.json` / `convert_info.json` の schema 互換チェックを追加する。
-   破壊的なフィールド削除や `thread.json` 復活をテストで検出する。
+4. smoke cleanup の Docker image 検証を検討する。
+   named product image を壊さず、一時 project 由来の不要 image だけを検出できる場合に限定する。
 
-5. `logs/worker.log` と `result.json` の失敗時 contract を固める。
-   conversation-level failure と run-level failure を分け、診断に必要な情報が残ることを確認する。
+5. conversation-level failure の contract を固める。
+   一部 conversation の parse 失敗が、他 conversation の出力や run 全体の診断情報を壊さないことを確認する。
 
 ## 優先度低
 

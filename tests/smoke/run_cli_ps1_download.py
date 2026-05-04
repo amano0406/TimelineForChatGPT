@@ -111,6 +111,18 @@ def main(argv: list[str] | None = None) -> int:
         archive_path = _host_path_from_cli(str(download.get("download_path") or ""))
         _assert_master_output(output_root)
         _assert_download_archive(archive_path)
+        overwrite_failure = _run_cli_expect_failure(
+            powershell,
+            [
+                "items",
+                "download",
+                "--to",
+                _to_windows_path(archive_path),
+                "--json",
+            ],
+            mount_env,
+        )
+        _assert_download_without_overwrite_rejected(overwrite_failure, archive_path)
         _assert_file_unchanged(NORMAL_SETTINGS_PATH, normal_settings_snapshot)
         print(
             json.dumps(
@@ -122,6 +134,7 @@ def main(argv: list[str] | None = None) -> int:
                     "download_archive": str(archive_path),
                     "fixture_conversation": FIXTURE_CONVERSATION_ID,
                     "long_input_name": export_path.name,
+                    "download_without_overwrite_rejected": True,
                     "normal_settings_unchanged": True,
                 },
                 ensure_ascii=False,
@@ -132,6 +145,7 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         if not args.keep_compose_project:
             _cleanup_smoke_compose_project(mount_env)
+            _assert_smoke_compose_project_removed(compose_project_name)
         if not args.preserve_output:
             shutil.rmtree(smoke_root, ignore_errors=True)
             if smoke_root.exists():
@@ -189,20 +203,32 @@ def _run_cli(
     args: list[str],
     mount_env: dict[str, str],
 ) -> subprocess.CompletedProcess[str]:
+    completed = _run_cli_process(powershell, args, mount_env)
+    if completed.returncode != 0:
+        raise RuntimeError(_format_command_error(_cli_command(powershell, args, mount_env), completed))
+    return completed
+
+
+def _run_cli_expect_failure(
+    powershell: str,
+    args: list[str],
+    mount_env: dict[str, str],
+) -> subprocess.CompletedProcess[str]:
+    completed = _run_cli_process(powershell, args, mount_env)
+    if completed.returncode == 0:
+        raise AssertionError(f"Command should have failed but completed successfully: {' '.join(args)}")
+    return completed
+
+
+def _run_cli_process(
+    powershell: str,
+    args: list[str],
+    mount_env: dict[str, str],
+) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env.update(mount_env)
-    script = _powershell_invocation_script(args, mount_env)
-    command = [
-        powershell,
-        "-NoLogo",
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        script,
-    ]
-    completed = subprocess.run(
-        command,
+    return subprocess.run(
+        _cli_command(powershell, args, mount_env),
         cwd=REPO_ROOT,
         env=env,
         check=False,
@@ -212,9 +238,18 @@ def _run_cli(
         errors="replace",
         timeout=CLI_TIMEOUT_SECONDS,
     )
-    if completed.returncode != 0:
-        raise RuntimeError(_format_command_error(command, completed))
-    return completed
+
+
+def _cli_command(powershell: str, args: list[str], mount_env: dict[str, str]) -> list[str]:
+    return [
+        powershell,
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        _powershell_invocation_script(args, mount_env),
+    ]
 
 
 def _powershell_invocation_script(args: list[str], mount_env: dict[str, str]) -> str:
@@ -236,7 +271,7 @@ def _cleanup_smoke_compose_project(mount_env: dict[str, str]) -> None:
     project_name = mount_env.get("COMPOSE_PROJECT_NAME") or "tfcg-cli-ps1-smoke"
     env = os.environ.copy()
     env.update(mount_env)
-    subprocess.run(
+    completed = subprocess.run(
         ["docker", "compose", "-p", project_name, "down", "--remove-orphans", "-v", "--rmi", "local"],
         cwd=REPO_ROOT,
         env=env,
@@ -247,6 +282,36 @@ def _cleanup_smoke_compose_project(mount_env: dict[str, str]) -> None:
         errors="replace",
         timeout=CLI_TIMEOUT_SECONDS,
     )
+    if completed.returncode != 0:
+        raise RuntimeError(_format_command_error(["docker", "compose", "-p", project_name, "down"], completed))
+
+
+def _assert_smoke_compose_project_removed(project_name: str) -> None:
+    containers = _docker_output_lines(["ps", "-a", "--format", "{{.Names}}"])
+    leftover_containers = sorted(name for name in containers if name.startswith(f"{project_name}-"))
+    if leftover_containers:
+        raise AssertionError(f"Smoke Docker containers were not removed: {leftover_containers}")
+
+    volumes = _docker_output_lines(["volume", "ls", "--format", "{{.Name}}"])
+    leftover_volumes = sorted(name for name in volumes if name.startswith(f"{project_name}_"))
+    if leftover_volumes:
+        raise AssertionError(f"Smoke Docker volumes were not removed: {leftover_volumes}")
+
+
+def _docker_output_lines(args: list[str]) -> list[str]:
+    completed = subprocess.run(
+        ["docker", *args],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=CLI_TIMEOUT_SECONDS,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(_format_command_error(["docker", *args], completed))
+    return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
 
 
 def _format_command_error(command: list[str], completed: subprocess.CompletedProcess[str]) -> str:
@@ -385,6 +450,19 @@ def _assert_download_archive(archive_path: Path) -> None:
             raise AssertionError(f"Download ZIP is missing required entries: {missing}")
         if any(name.endswith("/thread.json") for name in names):
             raise AssertionError("Download ZIP must not contain legacy thread.json entries.")
+
+
+def _assert_download_without_overwrite_rejected(
+    completed: subprocess.CompletedProcess[str],
+    archive_path: Path,
+) -> None:
+    output = f"{completed.stdout}\n{completed.stderr}"
+    expected_path = _to_windows_path(archive_path)
+    if "Download target already exists" not in output:
+        raise AssertionError(f"Download without --overwrite failed for the wrong reason: {output!r}")
+    compact_output = "".join(output.split())
+    if "".join(expected_path.split()) not in compact_output and archive_path.name not in output:
+        raise AssertionError(f"Download overwrite rejection did not mention the target path: {output!r}")
 
 
 def _json_from_stdout(stdout: str) -> dict[str, Any]:

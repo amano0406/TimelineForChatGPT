@@ -17,6 +17,22 @@
 
 download ZIP に含まれる `README.md` は、生成された ZIP の中身を説明するための成果物内 README です。この root README とは役割が異なります。
 
+## 製品の役割と思想
+
+`TimelineForChatGPT` は、Timeline 系サブ製品の中で「ChatGPT export ZIP を、会話単位の Timeline 向け成果物へ変換する入口」を担当します。
+
+この製品の中心責務は、ChatGPT 固有の export 構造、conversation graph、message 列、添付参照を壊さず読み取り、後段の Timeline 製品や LLM が扱いやすい per-conversation artifact に落とすことです。
+
+設計上の判断軸は次です。
+
+- export ZIP を正本として扱い、指定された ZIP から現在の `outputRoot` を作り直す
+- conversation order、message order、role、日時、最終 export タイトル、添付参照をできるだけ維持する
+- 要約や日付範囲抽出ではなく、再利用しやすい構造化と handoff ZIP 生成を優先する
+- Web UI は持たず、Windows CLI と Docker Compose 管理 worker を正面玄関にする
+- 元 ZIP を削除、移動、改名、上書きせず、local-first に閉じる
+
+Timeline family 内での位置づけは、`TimelineForAudio` や `TimelineForVideo` が media を Timeline 向けに整えるのと同じです。この製品は ChatGPT export を担当し、全体 timeline 化、日付範囲抽出、横断検索、さらに高度な要約は後段の製品やワークフローに渡します。
+
 ## 最短手順
 
 ```powershell
@@ -208,7 +224,7 @@ Docker 内でテストします。
 python tests/smoke/run_cli_ps1_download.py
 ```
 
-この smoke test は通常の `settings.json` を書き換えません。一時 settings file、専用 Docker Compose project、一時 app-data/cache/output directory を `C:\TimelineData\tfcg-cli-ps1-smoke-*` 配下に作成し、`--preserve-output` 指定時以外は削除します。長い ZIP ファイル名、空白を含む path、`items refresh --download-to`、`items list` の全件既定とページング、`items download` を確認します。
+この smoke test は通常の `settings.json` を書き換えません。一時 settings file、専用 Docker Compose project、一時 app-data/cache/output directory を `C:\TimelineData\tfcg-cli-ps1-smoke-*` 配下に作成し、`--preserve-output` 指定時以外は削除します。長い ZIP ファイル名、空白を含む path、`items refresh --download-to`、`items list` の全件既定とページング、`items download`、既存 ZIP の誤上書き拒否、一時 Docker container / volume の cleanup を確認します。
 
 Docker unit tests の後にこの smoke test も含める場合:
 
