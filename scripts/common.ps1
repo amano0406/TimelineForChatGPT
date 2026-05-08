@@ -27,6 +27,7 @@ function Get-TimelineForChatGPTSettingsPath {
 function Initialize-TimelineForChatGPTSettings {
     Initialize-TimelineForChatGPTWorkspace
     $settingsPath = Get-TimelineForChatGPTSettingsPath
+    $env:TIMELINE_FOR_CHATGPT_HOST_SETTINGS_PATH = $settingsPath
     if (-not (Test-Path -LiteralPath $settingsPath)) {
         $settingsDir = Split-Path -Parent $settingsPath
         if ($settingsDir -and -not (Test-Path -LiteralPath $settingsDir)) {
@@ -44,6 +45,163 @@ function Initialize-TimelineForChatGPTSettings {
             New-Item -ItemType Directory -Path $outputRoot | Out-Null
         }
         $env:TIMELINE_FOR_CHATGPT_HOST_OUTPUT_ROOT = $outputRoot
+    }
+}
+
+function Get-TimelineForChatGPTDockerCommand {
+    $dockerExe = Join-Path $env:ProgramFiles "Docker\Docker\resources\bin\docker.exe"
+    if (Test-Path -LiteralPath $dockerExe) { return $dockerExe }
+    $docker = Get-Command docker.exe -ErrorAction SilentlyContinue
+    if ($docker) { return $docker.Source }
+    $docker = Get-Command docker -ErrorAction SilentlyContinue
+    if ($docker) { return $docker.Source }
+    throw "docker.exe was not found. Install or start Docker Desktop."
+}
+
+function Get-TimelineForChatGPTComposeArguments {
+    $arguments = [System.Collections.Generic.List[string]]::new()
+    $arguments.Add("compose") | Out-Null
+    $projectName = [Environment]::GetEnvironmentVariable("COMPOSE_PROJECT_NAME", "Process")
+    if (-not [string]::IsNullOrWhiteSpace($projectName)) {
+        $arguments.Add("-p") | Out-Null
+        $arguments.Add($projectName) | Out-Null
+    }
+    return $arguments.ToArray()
+}
+
+function Format-TimelineForChatGPTProcessArgument {
+    param([string]$Value)
+
+    if ($null -eq $Value) { return '""' }
+    $text = [string]$Value
+    if ($text.Length -eq 0) { return '""' }
+    if ($text -notmatch '[\s"]') { return $text }
+
+    $builder = [System.Text.StringBuilder]::new()
+    [void]$builder.Append('"')
+    $backslashes = 0
+    foreach ($character in $text.ToCharArray()) {
+        if ($character -eq '\') {
+            $backslashes += 1
+            continue
+        }
+        if ($character -eq '"') {
+            if ($backslashes -gt 0) {
+                [void]$builder.Append(('\' * ($backslashes * 2)))
+                $backslashes = 0
+            }
+            [void]$builder.Append('\"')
+            continue
+        }
+        if ($backslashes -gt 0) {
+            [void]$builder.Append(('\' * $backslashes))
+            $backslashes = 0
+        }
+        [void]$builder.Append($character)
+    }
+    if ($backslashes -gt 0) {
+        [void]$builder.Append(('\' * ($backslashes * 2)))
+    }
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
+
+function Invoke-TimelineForChatGPTHiddenProcess {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [string[]]$Arguments = @(),
+        [switch]$WriteOutput,
+        [switch]$SuppressOutput
+    )
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $FilePath
+    $startInfo.Arguments = (@($Arguments) | ForEach-Object { Format-TimelineForChatGPTProcessArgument -Value ([string]$_) }) -join " "
+    $startInfo.WorkingDirectory = (Get-Location).Path
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.StandardOutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    $startInfo.StandardErrorEncoding = [System.Text.UTF8Encoding]::new($false)
+    $fileDirectory = Split-Path -Parent $FilePath
+    if ($fileDirectory) {
+        $currentPath = $startInfo.EnvironmentVariables["PATH"]
+        if (-not $currentPath) {
+            $currentPath = $env:PATH
+        }
+        $updatedPath = "$fileDirectory;$currentPath"
+        $startInfo.EnvironmentVariables["PATH"] = $updatedPath
+        $startInfo.EnvironmentVariables["Path"] = $updatedPath
+    }
+    $startInfo.EnvironmentVariables["PATHEXT"] = ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.CPL"
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    [void]$process.Start()
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $process.WaitForExit()
+
+    $stdout = [string]$stdoutTask.Result
+    $stderr = [string]$stderrTask.Result
+    if ($WriteOutput -and -not $SuppressOutput) {
+        if ($stdout.Length -gt 0) { [Console]::Out.Write($stdout) }
+        if ($stderr.Length -gt 0) { [Console]::Error.Write($stderr) }
+    }
+
+    return [pscustomobject]@{
+        ExitCode = [int]$process.ExitCode
+        Stdout = $stdout
+        Stderr = $stderr
+    }
+}
+
+function Assert-TimelineForChatGPTDockerReady {
+    param([Parameter(Mandatory = $true)][string]$Docker)
+
+    $dockerInfo = Invoke-TimelineForChatGPTHiddenProcess -FilePath $Docker -Arguments @("info") -SuppressOutput
+    if ($dockerInfo.ExitCode -ne 0) {
+        throw "Docker Desktop is installed but the Docker engine is not ready."
+    }
+}
+
+function Invoke-TimelineForChatGPTWithFileLock {
+    param(
+        [Parameter(Mandatory = $true)][string]$LockName,
+        [Parameter(Mandatory = $true)][scriptblock]$ScriptBlock
+    )
+
+    $generatedDir = Join-Path (Get-Location) ".docker"
+    New-Item -ItemType Directory -Path $generatedDir -Force | Out-Null
+    $lockPath = Join-Path $generatedDir $LockName
+    $lockStream = $null
+    for ($attempt = 1; $attempt -le 300; $attempt += 1) {
+        try {
+            $lockStream = [System.IO.File]::Open(
+                $lockPath,
+                [System.IO.FileMode]::OpenOrCreate,
+                [System.IO.FileAccess]::ReadWrite,
+                [System.IO.FileShare]::None
+            )
+            break
+        }
+        catch [System.IO.IOException] {
+            Start-Sleep -Milliseconds 100
+        }
+    }
+    if (-not $lockStream) {
+        throw "Timed out waiting for lock: $lockPath"
+    }
+
+    try {
+        & $ScriptBlock
+    }
+    finally {
+        if ($lockStream) {
+            $lockStream.Dispose()
+        }
     }
 }
 

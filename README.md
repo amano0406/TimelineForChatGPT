@@ -40,6 +40,7 @@ Important generated files:
 
 ```powershell
 cd C:\apps\TimelineForChatGPT
+.\start.ps1
 .\cli.bat settings init
 .\cli.bat items refresh --file C:\path\chatgpt-export.zip --json
 .\cli.bat items list --json
@@ -53,6 +54,9 @@ Sample input and sample output are planned. For now, use a real ChatGPT export Z
 ## Common Commands
 
 ```powershell
+.\start.ps1
+.\stop.ps1
+
 .\cli.bat settings status
 .\cli.bat settings output show
 .\cli.bat settings output set C:\TimelineData\chatgpt

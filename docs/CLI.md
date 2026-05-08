@@ -13,6 +13,15 @@ cd C:\apps\TimelineForChatGPT
 
 `cli.bat` starts the PowerShell wrapper and runs the worker through Docker Compose.
 
+Use `start.ps1` and `stop.ps1` when you want to explicitly start or stop the persistent Docker Compose worker:
+
+```powershell
+.\start.ps1
+.\stop.ps1
+```
+
+`start.bat` and `stop.bat` are convenience wrappers that call the matching PowerShell scripts with the expected execution policy.
+
 ## Settings Commands
 
 ```powershell

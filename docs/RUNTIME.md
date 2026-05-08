@@ -11,6 +11,15 @@
 
 Normal operation uses `cli.bat`. The Python worker runs inside Docker Compose.
 
+Use these commands to explicitly control the persistent worker:
+
+```powershell
+.\start.ps1
+.\stop.ps1
+```
+
+`start.ps1` starts the Compose-managed `worker` service. `stop.ps1` stops that service without deleting Docker volumes. `start.bat` and `stop.bat` are Windows convenience wrappers for the same PowerShell scripts.
+
 ## Settings
 
 The local settings file is:
