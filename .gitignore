@@ -13,5 +13,6 @@ worker/.venv/
 
 artifacts/
 data/
+release/
 
 settings.json
