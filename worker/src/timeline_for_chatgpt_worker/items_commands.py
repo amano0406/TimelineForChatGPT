@@ -6,8 +6,10 @@ from pathlib import Path
 import shutil
 
 from .fs_utils import ensure_dir, load_json, now_iso, write_json
-from .master import APPLICATION_NAME, build_download_zip, rebuild_master_from_run
+from .master import rebuild_master_from_run
+from .master_download import build_download_zip
 from .processor import process_run
+from .product_constants import APPLICATION_NAME
 from .refresh import load_runtime_config, refresh_lock, validate_runtime_config
 from .run_requests import create_run_from_input
 
