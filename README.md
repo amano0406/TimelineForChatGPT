@@ -49,7 +49,7 @@ cd C:\apps\TimelineForChatGPT
 
 ## Sample
 
-Sample input and sample output are planned. For now, use a real ChatGPT export ZIP stored outside this repository.
+Use a real ChatGPT export ZIP stored outside this repository.
 
 ## Common Commands
 
@@ -72,7 +72,5 @@ Sample input and sample output are planned. For now, use a real ChatGPT export Z
 
 - [docs/CLI.md](docs/CLI.md): read this when you need the command contract.
 - [docs/OUTPUTS.md](docs/OUTPUTS.md): read this when you need the generated file layout.
-- [docs/PIPELINE.md](docs/PIPELINE.md): read this when you need the processing flow.
 - [docs/RUNTIME.md](docs/RUNTIME.md): read this when you need runtime requirements and settings.
 - [docs/TESTING.md](docs/TESTING.md): read this when you need validation commands.
-- [docs/SAFETY.md](docs/SAFETY.md): read this when you need operational safety notes.

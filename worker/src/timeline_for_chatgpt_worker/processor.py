@@ -6,7 +6,8 @@ from pathlib import Path
 
 from .contracts import RunRequest, RunResult, RunStatus
 from .fs_utils import append_log, ensure_dir, load_json, now_iso, write_json
-from .parser import build_archive, normalize_export
+from .parser import normalize_export
+from .run_pack import build_archive
 
 
 def outputs_root() -> Path:

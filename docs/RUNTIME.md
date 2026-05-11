@@ -54,3 +54,10 @@ Runtime state and cache are Docker-managed data:
 - `cache-data`: temporary upload and handoff staging
 
 These locations are product-managed and are not user settings.
+
+## Safety Notes
+
+- The source ChatGPT export ZIP is input only. It is not deleted, moved, renamed, or overwritten.
+- `items refresh --file` rebuilds the current output root from the supplied ZIP.
+- Download commands do not overwrite an existing ZIP unless `--overwrite` is passed.
+- Attachment references may appear in metadata, but binary attachment files are not copied into the handoff ZIP.

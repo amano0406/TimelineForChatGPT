@@ -2,17 +2,13 @@
 
 [Back to README](../README.md)
 
-## Output Root
-
 The default output root is:
 
 ```text
 C:\TimelineData\chatgpt
 ```
 
-Each refresh rebuilds the current output from the supplied ZIP.
-
-## Current Output Layout
+`items refresh --file` rebuilds the current output from the supplied ZIP.
 
 ```text
 <outputRoot>\
@@ -45,3 +41,9 @@ items/<conversation-id>/timeline.json
 ```
 
 Binary attachment files are not included in the handoff ZIP.
+
+## Processing Summary
+
+The worker extracts the ChatGPT export ZIP, locates `conversations.json` or `conversations-*.json`, follows each exported conversation path, and writes normalized conversation items to the current output root.
+
+ZIP-level failures stop the refresh. Conversation-level failures are recorded without changing the source ZIP.
