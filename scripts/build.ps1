@@ -1,4 +1,7 @@
 . "$PSScriptRoot\common.ps1"
-Set-TimelineForChatGPTRoot
-& docker compose build worker
+Initialize-TimelineForChatGPTSettings
+$docker = Get-TimelineForChatGPTDockerCommand
+$composeArgs = Get-TimelineForChatGPTComposeArguments
+$buildArgs = @($composeArgs) + @("build", "worker", "api")
+& $docker @buildArgs
 Exit-TimelineForChatGPTNativeCommand

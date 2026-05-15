@@ -24,6 +24,60 @@ function Get-TimelineForChatGPTSettingsPath {
     return [System.IO.Path]::GetFullPath($settingsPath)
 }
 
+function Normalize-TimelineForChatGPTInstanceName {
+    param([string]$Value)
+
+    $normalized = ([string]$Value).Trim().ToLowerInvariant()
+    $normalized = [System.Text.RegularExpressions.Regex]::Replace($normalized, "[^a-z0-9-]+", "-")
+    $normalized = $normalized.Trim("-")
+    if ($normalized.Length -gt 48) {
+        $normalized = $normalized.Substring(0, 48).Trim("-")
+    }
+    return $normalized
+}
+
+function Get-TimelineForChatGPTRuntimeSettings {
+    Initialize-TimelineForChatGPTWorkspace
+    $settingsPath = Get-TimelineForChatGPTSettingsPath
+    $settings = Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $runtime = if ($settings.PSObject.Properties["runtime"] -and $null -ne $settings.runtime) { $settings.runtime } else { [pscustomobject]@{} }
+
+    $instanceName = ""
+    if ($runtime.PSObject.Properties["instanceName"]) {
+        $instanceName = Normalize-TimelineForChatGPTInstanceName -Value ([string]$runtime.instanceName)
+    }
+    $envInstanceName = Normalize-TimelineForChatGPTInstanceName -Value ([Environment]::GetEnvironmentVariable("TIMELINE_FOR_CHATGPT_INSTANCE_NAME", "Process"))
+    if ($envInstanceName) {
+        $instanceName = $envInstanceName
+    }
+
+    $apiPort = 19300
+    if ($runtime.PSObject.Properties["apiPort"]) {
+        [void][int]::TryParse(([string]$runtime.apiPort), [ref]$apiPort)
+    }
+    $envApiPort = [Environment]::GetEnvironmentVariable("TIMELINE_FOR_CHATGPT_API_PORT", "Process")
+    if (-not [string]::IsNullOrWhiteSpace($envApiPort)) {
+        [void][int]::TryParse($envApiPort, [ref]$apiPort)
+    }
+    if ($apiPort -lt 1 -or $apiPort -gt 65535) {
+        $apiPort = 19300
+    }
+
+    $composeProject = [Environment]::GetEnvironmentVariable("COMPOSE_PROJECT_NAME", "Process")
+    if ([string]::IsNullOrWhiteSpace($composeProject)) {
+        $composeProject = [Environment]::GetEnvironmentVariable("TIMELINE_FOR_CHATGPT_COMPOSE_PROJECT", "Process")
+    }
+    if ([string]::IsNullOrWhiteSpace($composeProject)) {
+        $composeProject = if ($instanceName) { "timeline-for-chatgpt-$instanceName" } else { "timeline-for-chatgpt" }
+    }
+
+    return [pscustomobject]@{
+        InstanceName = $instanceName
+        ApiPort = $apiPort
+        ComposeProject = $composeProject
+    }
+}
+
 function Initialize-TimelineForChatGPTSettings {
     Initialize-TimelineForChatGPTWorkspace
     $settingsPath = Get-TimelineForChatGPTSettingsPath
@@ -46,6 +100,12 @@ function Initialize-TimelineForChatGPTSettings {
         }
         $env:TIMELINE_FOR_CHATGPT_HOST_OUTPUT_ROOT = $outputRoot
     }
+    $runtime = Get-TimelineForChatGPTRuntimeSettings
+    if ($runtime.InstanceName) {
+        $env:TIMELINE_FOR_CHATGPT_INSTANCE_NAME = [string]$runtime.InstanceName
+    }
+    $env:TIMELINE_FOR_CHATGPT_API_PORT = [string]$runtime.ApiPort
+    $env:TIMELINE_FOR_CHATGPT_COMPOSE_PROJECT = [string]$runtime.ComposeProject
 }
 
 function Get-TimelineForChatGPTDockerCommand {
@@ -61,11 +121,9 @@ function Get-TimelineForChatGPTDockerCommand {
 function Get-TimelineForChatGPTComposeArguments {
     $arguments = [System.Collections.Generic.List[string]]::new()
     $arguments.Add("compose") | Out-Null
-    $projectName = [Environment]::GetEnvironmentVariable("COMPOSE_PROJECT_NAME", "Process")
-    if (-not [string]::IsNullOrWhiteSpace($projectName)) {
-        $arguments.Add("-p") | Out-Null
-        $arguments.Add($projectName) | Out-Null
-    }
+    $runtime = Get-TimelineForChatGPTRuntimeSettings
+    $arguments.Add("-p") | Out-Null
+    $arguments.Add([string]$runtime.ComposeProject) | Out-Null
     return $arguments.ToArray()
 }
 

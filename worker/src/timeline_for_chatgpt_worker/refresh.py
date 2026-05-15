@@ -28,6 +28,8 @@ class RuntimeConfig:
     allowed_extensions: list[str]
     recursive: bool = False
     profile: str = "timeline-default"
+    instance_name: str = ""
+    api_port: int = 19300
 
 
 def default_settings_path() -> Path:
@@ -85,6 +87,7 @@ def load_runtime_config(path: Path | None = None) -> RuntimeConfig:
         use_environment_roots=use_environment_roots,
     )
     refresh_payload = payload.get("refresh") if isinstance(payload.get("refresh"), dict) else {}
+    runtime_payload = payload.get("runtime") if isinstance(payload.get("runtime"), dict) else {}
 
     return RuntimeConfig(
         output_root=output_root,
@@ -95,6 +98,8 @@ def load_runtime_config(path: Path | None = None) -> RuntimeConfig:
         allowed_extensions=allowed_extensions_from_config(payload),
         recursive=bool(refresh_payload.get("recursive", False)),
         profile=str(refresh_payload.get("profile") or "timeline-default"),
+        instance_name=str(runtime_payload.get("instanceName") or ""),
+        api_port=api_port_from_config(runtime_payload),
     )
 
 
@@ -147,7 +152,8 @@ def build_config_check(config_path: Path | None = None) -> dict[str, Any]:
         raise ValueError(f"settings must be a JSON object: {settings_path}")
     config = load_runtime_config(settings_path)
     warnings = validate_runtime_config(config, require_input_roots=False)
-    unsupported_keys = sorted(key for key in payload if key != "outputRoot")
+    supported_settings_keys = ["schemaVersion", "runtime", "outputRoot"]
+    unsupported_keys = sorted(key for key in payload if key not in supported_settings_keys)
     for key in unsupported_keys:
         warnings.append(f"Ignoring unsupported settings key: {key}")
     return {
@@ -161,7 +167,7 @@ def build_config_check(config_path: Path | None = None) -> dict[str, Any]:
         "run_root": str(config.run_root),
         "state_root": str(config.state_root),
         "cache_root": str(config.cache_root),
-        "supported_settings_keys": ["outputRoot"],
+        "supported_settings_keys": supported_settings_keys,
         "unsupported_settings_keys": unsupported_keys,
         "warnings": warnings,
     }
@@ -256,6 +262,16 @@ def allowed_extensions_from_config(payload: dict[str, Any]) -> list[str]:
     if not isinstance(configured, list) or not configured:
         return [".zip"]
     return sorted({normalize_extension(item) for item in configured})
+
+
+def api_port_from_config(payload: dict[str, Any]) -> int:
+    configured = os.environ.get("TIMELINE_FOR_CHATGPT_API_PORT")
+    value = configured if configured else payload.get("apiPort")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 19300
+    return parsed if 1 <= parsed <= 65535 else 19300
 
 
 def legacy_path_from_config(value: Any, base_dir: Path) -> Path | None:

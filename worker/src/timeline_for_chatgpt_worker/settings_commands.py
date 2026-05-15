@@ -17,10 +17,14 @@ def settings_status_payload(settings_path: Path) -> dict[str, object]:
         "run_root": str(config.run_root),
         "state_root": str(config.state_root),
         "cache_root": str(config.cache_root),
+        "runtime": {
+            "instance_name": config.instance_name,
+            "api_port": config.api_port,
+        },
         "warnings": warnings,
         "summary": (
             f"output={config.output_root} runs={config.run_root} "
-            f"state={config.state_root} cache={config.cache_root}"
+            f"state={config.state_root} cache={config.cache_root} api={config.api_port}"
         ),
     }
 
@@ -38,7 +42,6 @@ def settings_output_set_payload(settings_path: Path, path_value: str) -> dict[st
     payload = load_json(settings_path)
     if not isinstance(payload, dict):
         raise ValueError(f"settings must be a JSON object: {settings_path}")
-    payload.clear()
     payload["outputRoot"] = path_value
     write_json(settings_path, payload)
     return settings_output_show_payload(settings_path)

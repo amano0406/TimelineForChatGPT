@@ -1,6 +1,18 @@
 name: timeline-for-chatgpt
 
 services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    environment:
+      TIMELINE_FOR_CHATGPT_SETTINGS: /workspace/settings.json
+      TIMELINE_FOR_CHATGPT_API_LISTEN_PORT: 8080
+    ports:
+      - "127.0.0.1:${TIMELINE_FOR_CHATGPT_API_PORT:-19300}:8080"
+    volumes:
+      - "${TIMELINE_FOR_CHATGPT_HOST_SETTINGS_PATH:-./settings.json}:/workspace/settings.json"
+
   worker:
     build:
       context: .

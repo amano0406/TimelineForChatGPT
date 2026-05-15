@@ -4,6 +4,8 @@ __pycache__/
 *.pyo
 .pytest_cache/
 worker/.venv/
+api/bin/
+api/obj/
 artifacts/
 data/
 *.zip

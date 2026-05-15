@@ -135,9 +135,37 @@ class ProcessRunTests(unittest.TestCase):
             report = build_config_check(config_path)
 
             self.assertEqual(report["output_root"], str(output_root))
-            self.assertEqual(report["supported_settings_keys"], ["outputRoot"])
+            self.assertEqual(report["supported_settings_keys"], ["schemaVersion", "runtime", "outputRoot"])
             self.assertEqual(report["unsupported_settings_keys"], [])
             self.assertEqual(report["warnings"], [])
+
+    def test_output_setting_update_preserves_other_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            settings_path = root / "settings.json"
+            settings_path.write_text(
+                json.dumps(
+                    {
+                        "outputRoot": str(root / "old"),
+                        "runtime": {
+                            "instanceName": "test-instance",
+                            "apiPort": 19300,
+                        },
+                        "huggingFaceToken": "secret-token",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            from timeline_for_chatgpt_worker.settings_commands import settings_output_set_payload
+
+            settings_output_set_payload(settings_path, str(root / "new"))
+
+            payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["outputRoot"], str(root / "new"))
+            self.assertEqual(payload["runtime"]["instanceName"], "test-instance")
+            self.assertEqual(payload["runtime"]["apiPort"], 19300)
+            self.assertEqual(payload["huggingFaceToken"], "secret-token")
 
     def test_items_refresh_rebuilds_master_and_download_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

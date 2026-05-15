@@ -12,17 +12,17 @@ $OutputEncoding = $utf8NoBom
 $repoRoot = $PSScriptRoot
 . (Join-Path $repoRoot "scripts\common.ps1")
 
-Initialize-TimelineForChatGPTWorkspace
+Initialize-TimelineForChatGPTSettings
 $docker = Get-TimelineForChatGPTDockerCommand
 Assert-TimelineForChatGPTDockerReady -Docker $docker
 $composeArgs = Get-TimelineForChatGPTComposeArguments
 
 $script:stopExitCode = 0
 Invoke-TimelineForChatGPTWithFileLock -LockName "docker-compose.lock" -ScriptBlock {
-    Write-Host "Stopping TimelineForChatGPT worker..."
+    Write-Host "Stopping TimelineForChatGPT health API and worker..."
     $stopResult = Invoke-TimelineForChatGPTHiddenProcess `
         -FilePath $docker `
-        -Arguments (@($composeArgs) + @("stop", "worker")) `
+        -Arguments (@($composeArgs) + @("stop", "api", "worker")) `
         -WriteOutput
     $script:stopExitCode = $stopResult.ExitCode
 }
