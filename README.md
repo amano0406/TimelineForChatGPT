@@ -6,7 +6,7 @@ TimelineForChatGPT converts one ChatGPT export ZIP into per-conversation timelin
 
 The output is designed to be easy to inspect, package, and hand off to another Timeline product or an LLM workflow.
 
-`start.ps1` starts a Docker worker container that also serves the local API used by Timeline for product operations.
+`start.ps1` starts a Docker worker container that also serves the local API used by Timeline for product actions.
 
 ## Runtime
 
@@ -106,11 +106,11 @@ Supported API routes:
 
 These routes are served by the resident Python worker container. API calls do
 not call host launchers, do not start Docker implicitly, and do not spawn a
-Python operation process for each request.
+separate Python process for each request.
 
-## Supported Item Operations
+## Supported Item API Actions
 
-The supported item operations are:
+The supported item API actions are:
 
 - `items refresh`: convert one ChatGPT export ZIP.
 - `items list`: list generated conversation items.

@@ -9,13 +9,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from .items_operations import DEFAULT_ITEMS_LIST_PAGE_SIZE
-from .items_operations import items_download_latest
-from .items_operations import items_list_payload
-from .items_operations import items_refresh_from_file
+from .item_service import DEFAULT_ITEMS_LIST_PAGE_SIZE
+from .item_service import items_download_latest
+from .item_service import items_list_payload
+from .item_service import items_refresh_from_file
 from .refresh import default_settings_path
 from .refresh import init_settings
-from .settings_operations import settings_status_payload
+from .settings_service import settings_status_payload
 
 
 WINDOWS_DRIVE_RE = re.compile(r"^([A-Za-z]):[\\/](.*)$")

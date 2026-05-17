@@ -13,7 +13,7 @@ def create_run_from_input(
     output_root: Path,
     profile: str,
     run_id: str | None = None,
-    source_id: str = "worker-operation",
+    source_id: str = "worker-service",
 ) -> Path:
     source_path = input_path.expanduser().resolve()
     if not source_path.exists():
@@ -33,7 +33,7 @@ def create_run_from_input(
         schema_version=1,
         run_id=resolved_run_id,
         created_at=created_at,
-        output_root_id="worker-operation",
+        output_root_id="worker-service",
         output_root_path=str(output_root),
         profile=profile,
         reprocess_duplicates=False,
@@ -54,7 +54,7 @@ def create_run_from_input(
         run_id=resolved_run_id,
         state="pending",
         current_stage="queued",
-        message="Queued from worker operation.",
+        message="Queued from worker service.",
         updated_at=created_at,
     )
 

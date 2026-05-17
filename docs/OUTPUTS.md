@@ -2,7 +2,7 @@
 
 [Back to README](../README.md)
 
-`items refresh --file` rebuilds the configured output root from one ChatGPT export ZIP. The configured output root is treated as generated data and is replaced during refresh. The source ZIP is read-only input; it is not deleted, moved, renamed, or overwritten.
+`POST /items/refresh` rebuilds the configured output root from one ChatGPT export ZIP. The configured output root is treated as generated data and is replaced during refresh. The source ZIP is read-only input; it is not deleted, moved, renamed, or overwritten.
 
 The output root is configured by `settings.json`:
 

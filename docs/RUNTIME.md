@@ -11,8 +11,8 @@
 
 Timeline integration uses the local API started by `start.ps1`. The Python
 worker runs inside Docker Compose and serves the API itself. Requests do not
-call host launchers, do not start Docker implicitly, and do not spawn a Python
-operation process for each request.
+call host launchers, do not start Docker implicitly, and do not spawn a separate
+Python process for each request.
 
 The local API exposes:
 
@@ -79,6 +79,6 @@ The worker also bind-mounts the configured host output directory to
 ## Safety Notes
 
 - The source ChatGPT export ZIP is input only. It is not deleted, moved, renamed, or overwritten.
-- `items refresh --file` rebuilds the current output root from the supplied ZIP.
+- `POST /items/refresh` rebuilds the current output root from the supplied ZIP.
 - Download commands do not overwrite an existing ZIP unless `--overwrite` is passed.
 - Attachment references may appear in metadata, but binary attachment files are not copied into the handoff ZIP.

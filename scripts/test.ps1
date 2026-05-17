@@ -1,7 +1,6 @@
 [CmdletBinding()]
 param(
     [Parameter()]
-    [Alias("IncludeLocalCliDownload")]
     [switch]$IncludeLocalApiSmoke
 )
 
