@@ -10,7 +10,7 @@ var bindPort = ProductPaths.ReadPort(args, paths.SettingsPath, 19300);
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton(paths);
-builder.Services.AddSingleton<ProductCommandRunner>();
+builder.Services.AddSingleton<ProductOperationRunner>();
 if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
 {
     builder.WebHost.UseUrls($"http://127.0.0.1:{bindPort}");
@@ -24,7 +24,7 @@ var items = app.MapGroup("/items");
 
 items.MapPost("/refresh", async (
     HttpContext context,
-    ProductCommandRunner runner,
+    ProductOperationRunner runner,
     CancellationToken cancellationToken) =>
 {
     return await ExecuteJsonEndpointAsync(async () =>
@@ -1010,11 +1010,11 @@ public sealed class ProductCommandException : Exception
     public JsonNode? Payload { get; }
 }
 
-public sealed class ProductCommandRunner
+public sealed class ProductOperationRunner
 {
     private readonly ProductPaths _paths;
 
-    public ProductCommandRunner(ProductPaths paths)
+    public ProductOperationRunner(ProductPaths paths)
     {
         _paths = paths;
     }
@@ -1107,7 +1107,7 @@ public sealed class ProductCommandRunner
 
             if (payload is null)
             {
-                throw new InvalidOperationException("TimelineForChatGPT command did not return JSON.");
+                throw new InvalidOperationException("TimelineForChatGPT operation did not return JSON.");
             }
 
             return payload;
@@ -1327,7 +1327,7 @@ public sealed class ProductCommandRunner
         }
     }
 
-    private static async Task<CommandResult> RunProcessAsync(
+    private static async Task<OperationResult> RunProcessAsync(
         string fileName,
         IReadOnlyList<string> arguments,
         string workingDirectory,
@@ -1381,7 +1381,7 @@ public sealed class ProductCommandRunner
 
         var stdout = await stdoutTask;
         var stderr = await stderrTask;
-        return new CommandResult(process.ExitCode, stdout, stderr);
+        return new OperationResult(process.ExitCode, stdout, stderr);
     }
 
     private static void KillProcessTree(Process process)
@@ -1516,7 +1516,7 @@ public sealed class ProductCommandRunner
     }
 }
 
-internal sealed record CommandResult(int ExitCode, string Stdout, string Stderr);
+internal sealed record OperationResult(int ExitCode, string Stdout, string Stderr);
 
 internal sealed record ConvertedArguments(
     IReadOnlyList<string> Arguments,
