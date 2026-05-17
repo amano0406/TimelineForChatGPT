@@ -10,17 +10,16 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
-from timeline_for_chatgpt_worker.operations import (
-    create_run_from_input,
-    docker_only_operation_guard_message,
+from timeline_for_chatgpt_worker.directory_refresh_operations import refresh_from_config
+from timeline_for_chatgpt_worker.items_operations import (
     items_download_latest,
     items_list_payload,
     items_refresh_from_file,
-    main,
-    refresh_from_config,
 )
 from timeline_for_chatgpt_worker.processor import process_run
-from timeline_for_chatgpt_worker.refresh import build_config_check
+from timeline_for_chatgpt_worker.refresh import build_config_check, init_settings
+from timeline_for_chatgpt_worker.run_requests import create_run_from_input
+from timeline_for_chatgpt_worker.runtime_guard import docker_only_operation_guard_message
 
 
 class ProcessRunTests(unittest.TestCase):
@@ -45,19 +44,9 @@ class ProcessRunTests(unittest.TestCase):
             example_payload = {"outputRoot": str(root / "output")}
             example_path.write_text(json.dumps(example_payload), encoding="utf-8")
 
-            with patch.dict(os.environ, {"TIMELINE_FOR_CHATGPT_ALLOW_HOST_RUN": "1"}):
-                exit_code = main(
-                    [
-                        "settings",
-                        "init",
-                        "--settings",
-                        str(settings_path),
-                        "--example",
-                        str(example_path),
-                    ]
-                )
+            created_path = init_settings(settings_path=settings_path, example_path=example_path)
 
-            self.assertEqual(exit_code, 0)
+            self.assertEqual(created_path, settings_path)
             self.assertTrue(settings_path.exists())
             self.assertEqual(
                 json.loads(settings_path.read_text(encoding="utf-8")),
