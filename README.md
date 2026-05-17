@@ -6,7 +6,7 @@ TimelineForChatGPT converts one ChatGPT export ZIP into per-conversation timelin
 
 The output is designed to be easy to inspect, package, and hand off to another Timeline product or an LLM workflow.
 
-`start.ps1` also starts a small local API on the Windows host. The API is used by Timeline for product operations; host CLI launchers have been removed.
+`start.ps1` also starts a small local API on the Windows host. The API is used by Timeline for product operations.
 
 ## Runtime
 
