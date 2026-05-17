@@ -127,6 +127,33 @@ function Get-TimelineForChatGPTComposeArguments {
     return $arguments.ToArray()
 }
 
+function Get-TimelineForChatGPTApiBaseUrl {
+    Initialize-TimelineForChatGPTSettings
+    $runtime = Get-TimelineForChatGPTRuntimeSettings
+    return "http://127.0.0.1:$($runtime.ApiPort)"
+}
+
+function Invoke-TimelineForChatGPTApi {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [object]$Body = @{}
+    )
+
+    $baseUrl = Get-TimelineForChatGPTApiBaseUrl
+    $url = $baseUrl.TrimEnd("/") + "/" + $Path.TrimStart("/")
+    $json = $Body | ConvertTo-Json -Depth 20 -Compress
+    $result = Invoke-RestMethod -Method Post -Uri $url -Body $json -ContentType "application/json"
+    $global:LASTEXITCODE = 0
+    $result | ConvertTo-Json -Depth 50
+}
+
+function Test-TimelineForChatGPTApi {
+    $baseUrl = Get-TimelineForChatGPTApiBaseUrl
+    $result = Invoke-RestMethod -Method Get -Uri ($baseUrl.TrimEnd("/") + "/health")
+    $global:LASTEXITCODE = 0
+    $result | ConvertTo-Json -Depth 10
+}
+
 function Format-TimelineForChatGPTProcessArgument {
     param([string]$Value)
 

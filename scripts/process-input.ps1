@@ -5,5 +5,7 @@ param(
 
 . "$PSScriptRoot\common.ps1"
 Set-TimelineForChatGPTRoot
-& (Join-Path $PSScriptRoot "..\cli.ps1") items refresh --file $FileName
+Invoke-TimelineForChatGPTApi -Path "items/refresh" -Body @{
+    file = $FileName
+}
 Exit-TimelineForChatGPTNativeCommand

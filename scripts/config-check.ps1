@@ -1,4 +1,5 @@
 . "$PSScriptRoot\common.ps1"
 Set-TimelineForChatGPTRoot
-& (Join-Path $PSScriptRoot "..\cli.ps1") config-check @args
+Test-TimelineForChatGPTApi
+Invoke-TimelineForChatGPTApi -Path "settings/status" -Body @{}
 Exit-TimelineForChatGPTNativeCommand

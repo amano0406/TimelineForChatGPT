@@ -9,24 +9,26 @@ cd C:\apps\TimelineForChatGPT
 .\scripts\test.ps1
 ```
 
-## Local CLI Smoke Test
-
-```powershell
-cd C:\apps\TimelineForChatGPT
-python tests/smoke/run_cli_ps1_download.py
-```
-
-This smoke test uses a temporary settings file, temporary output root, and dedicated Docker Compose project. It does not rewrite the normal `settings.json`.
-
 ## Combined Test
 
 ```powershell
-.\scripts\test.ps1 -IncludeLocalCliDownload
+.\scripts\test.ps1 -IncludeLocalApiSmoke
 ```
 
 ## Host Python Tests
 
 Host Python CLI execution is blocked for normal operation. Unit tests may use:
+
+PowerShell:
+
+```powershell
+cd C:\apps\TimelineForChatGPT
+$env:TIMELINE_FOR_CHATGPT_ALLOW_HOST_CLI = "1"
+$env:PYTHONPATH = "C:\apps\TimelineForChatGPT\worker\src"
+python -m unittest discover -s worker\tests -v
+```
+
+Bash / WSL:
 
 ```bash
 TIMELINE_FOR_CHATGPT_ALLOW_HOST_CLI=1 PYTHONPATH=/mnt/c/apps/TimelineForChatGPT/worker/src python3 -m unittest discover -s /mnt/c/apps/TimelineForChatGPT/worker/tests -v

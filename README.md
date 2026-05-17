@@ -2,11 +2,11 @@
 
 ## What This Product Does
 
-TimelineForChatGPT converts one ChatGPT export ZIP into per-conversation timeline artifacts. It is a local Windows CLI product: `cli.bat` is the normal command entrypoint, and the conversion worker runs through Docker Compose.
+TimelineForChatGPT converts one ChatGPT export ZIP into per-conversation timeline artifacts. It is a local Windows product with a small API for Timeline integration, and the conversion worker runs through Docker Compose.
 
 The output is designed to be easy to inspect, package, and hand off to another Timeline product or an LLM workflow.
 
-`start.ps1` also starts a small local health API. The health API is only for runtime readiness checks; product operations are still performed through the CLI.
+`start.ps1` also starts a small local API on the Windows host. The API is used by Timeline for product operations; host CLI launchers are legacy maintenance tools.
 
 ## Runtime
 
@@ -18,7 +18,7 @@ cd C:\apps\TimelineForChatGPT
 `start.ps1` starts:
 
 - `worker`: Python conversion worker.
-- `api`: C# health service for `GET /health`.
+- native API: C# local API for health and item operations.
 
 Stop the services without deleting generated data:
 
@@ -58,7 +58,7 @@ Unknown product-specific settings are preserved by settings updates.
 Provide one ChatGPT export ZIP when you refresh:
 
 ```powershell
-.\cli.bat items refresh --file C:\path\chatgpt-export.zip --json
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:19300/items/refresh -Body '{"file":"C:\\path\\chatgpt-export.zip"}' -ContentType 'application/json'
 ```
 
 The source ZIP is not deleted, moved, renamed, or overwritten.
@@ -82,14 +82,14 @@ See [docs/OUTPUTS.md](docs/OUTPUTS.md) for the concrete JSON structure and field
 ```powershell
 cd C:\apps\TimelineForChatGPT
 .\start.ps1
-.\cli.bat settings init
-.\cli.bat settings status
-.\cli.bat items refresh --file C:\path\chatgpt-export.zip --json
-.\cli.bat items list --json
-.\cli.bat items download --to C:\path\handoff
+Invoke-RestMethod http://127.0.0.1:19300/health
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:19300/settings/status -Body '{}' -ContentType 'application/json'
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:19300/items/refresh -Body '{"file":"C:\\path\\chatgpt-export.zip"}' -ContentType 'application/json'
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:19300/items/list -Body '{}' -ContentType 'application/json'
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:19300/items/download -Body '{"to":"C:\\path\\handoff"}' -ContentType 'application/json'
 ```
 
-## Health Check
+## Local API
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:19300/health
@@ -97,7 +97,21 @@ Invoke-RestMethod http://127.0.0.1:19300/health
 
 The endpoint returns a JSON boolean: `true` when the settings file is readable and has a valid `outputRoot` / `runtime.apiPort`, otherwise `false`.
 
-Only `GET /health` is part of the local API surface. Item refresh, list, download, and run inspection are CLI operations.
+Supported API routes:
+
+- `GET /health`
+- `POST /items/refresh`
+- `POST /items/list`
+- `POST /items/detail`
+- `POST /items/download`
+- `POST /settings/status`
+- `POST /settings/init`
+
+`POST /items/list`, `POST /items/download`, `POST /items/detail`, and
+`POST /settings/status` are handled directly by the local C# API from the
+generated artifacts and `settings.json`. `POST /items/refresh` invokes the
+Docker worker directly from C# and does not call host CLI launchers. If the worker is not
+already running, refresh returns an error instead of starting Docker implicitly.
 
 ## Supported Item Operations
 
@@ -105,34 +119,25 @@ The supported item commands are:
 
 - `items refresh`: convert one ChatGPT export ZIP.
 - `items list`: list generated conversation items.
+- `items detail`: read one generated conversation timeline for detail preview.
 - `items download`: create a handoff ZIP from generated items.
 
 This product does not provide `items remove`. Source ZIP deletion and generated-data cleanup are outside the current CLI contract.
 
-## Common Commands
+## Common API Calls
 
 ```powershell
 .\start.ps1
 .\stop.ps1
 
-.\cli.bat settings status
-.\cli.bat settings output show
-.\cli.bat settings output set C:\TimelineData\chatgpt
-
-.\cli.bat items refresh --file C:\path\chatgpt-export.zip --json
-.\cli.bat items refresh --file C:\path\chatgpt-export.zip --download-to C:\path\handoff --json
-.\cli.bat items list --json
-.\cli.bat items list --page 1 --page-size 100 --json
-.\cli.bat items download --to C:\path\handoff
-
-.\cli.bat runs list --json
-.\cli.bat runs show --run-id <run-id> --json
-.\cli.bat config-check
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:19300/settings/status -Body '{}' -ContentType 'application/json'
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:19300/items/refresh -Body '{"file":"C:\\path\\chatgpt-export.zip"}' -ContentType 'application/json'
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:19300/items/list -Body '{"page":1,"pageSize":100}' -ContentType 'application/json'
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:19300/items/download -Body '{"to":"C:\\path\\handoff"}' -ContentType 'application/json'
 ```
 
 ## Detailed Docs
 
-- [docs/CLI.md](docs/CLI.md): read this when you need the command contract.
 - [docs/OUTPUTS.md](docs/OUTPUTS.md): read this when you need the generated file layout.
 - [docs/RUNTIME.md](docs/RUNTIME.md): read this when you need runtime requirements and settings.
 - [docs/TESTING.md](docs/TESTING.md): read this when you need validation commands.

@@ -9,7 +9,23 @@
 - Git checkout at `C:\apps\TimelineForChatGPT`
 - PowerShell or `cmd.exe`
 
-Normal operation uses `cli.bat`. The Python worker runs inside Docker Compose.
+Timeline integration uses the local API started by `start.ps1`. The Python
+worker runs inside Docker Compose. `POST /items/list`, `POST /items/download`,
+`POST /items/detail`, and `POST /settings/status` are handled directly by the
+local C# API from `settings.json` and generated artifacts. `POST /items/refresh`
+invokes the Docker worker directly from C# with auto-start disabled.
+
+The local API exposes:
+
+```text
+GET  /health
+POST /items/refresh
+POST /items/list
+POST /items/detail
+POST /items/download
+POST /settings/status
+POST /settings/init
+```
 
 Use these commands to explicitly control the persistent worker:
 
@@ -18,7 +34,7 @@ Use these commands to explicitly control the persistent worker:
 .\stop.ps1
 ```
 
-`start.ps1` starts the Compose-managed `worker` service. `stop.ps1` stops that service without deleting Docker volumes. `start.bat` and `stop.bat` are Windows convenience wrappers for the same PowerShell scripts.
+`start.ps1` starts the Compose-managed `worker` service and the Windows-hosted local API. `stop.ps1` stops both without deleting Docker volumes. `start.bat` and `stop.bat` are Windows convenience wrappers for the same PowerShell scripts.
 
 ## Settings
 
