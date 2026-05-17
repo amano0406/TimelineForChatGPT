@@ -40,7 +40,7 @@ The per-conversation timeline is intentionally smaller than the internal run wor
 
 ## `manifest.json`
 
-`manifest.json` is the current output index. `items list` reads this file, sorts the items latest-first, and returns paged rows from it.
+`manifest.json` is the current output index. `POST /items/list` reads this file, sorts the items latest-first, and returns paged rows from it.
 
 Example:
 
@@ -250,7 +250,7 @@ Attachment field notes:
 
 ## Handoff ZIP
 
-`items download --to` creates a handoff ZIP from the current output root. The ZIP contains:
+`POST /items/download` with `to` creates a handoff ZIP from the current output root. The ZIP contains:
 
 ```text
 README.md

@@ -70,7 +70,7 @@ The configured output root contains:
     timeline.json
 ```
 
-`items download` creates a handoff ZIP containing `README.md`, `convert_info.json`, and `timeline.json` for the exported conversations.
+`POST /items/download` creates a handoff ZIP containing `README.md`, `convert_info.json`, and `timeline.json` for the exported conversations.
 
 See [docs/OUTPUTS.md](docs/OUTPUTS.md) for the concrete JSON structure and field meanings.
 
@@ -112,12 +112,12 @@ separate Python process for each request.
 
 The supported item API actions are:
 
-- `items refresh`: convert one ChatGPT export ZIP.
-- `items list`: list generated conversation items.
-- `items detail`: read one generated conversation timeline for detail preview.
-- `items download`: create a handoff ZIP from generated items.
+- `POST /items/refresh`: convert one ChatGPT export ZIP.
+- `POST /items/list`: list generated conversation items.
+- `POST /items/detail`: read one generated conversation timeline for detail preview.
+- `POST /items/download`: create a handoff ZIP from generated items.
 
-This product does not provide `items remove`. Source ZIP deletion and generated-data cleanup are outside the current API contract.
+This product does not provide `POST /items/remove`. Source ZIP deletion and generated-data cleanup are outside the current API contract.
 
 ## Common API Calls
 
