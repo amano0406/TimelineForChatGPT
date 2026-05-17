@@ -54,7 +54,7 @@ def create_run_from_input(
         run_id=resolved_run_id,
         state="pending",
         current_stage="queued",
-        message="Queued from worker command.",
+        message="Queued from worker operation.",
         updated_at=created_at,
     )
 

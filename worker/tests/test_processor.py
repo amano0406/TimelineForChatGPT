@@ -380,7 +380,7 @@ class ProcessRunTests(unittest.TestCase):
                                             "create_time": "2026-01-01T00:00:00Z",
                                             "content": {
                                                 "content_type": "text",
-                                                "parts": ["hello from worker command"],
+                                                "parts": ["hello from worker operation"],
                                             },
                                         },
                                     }

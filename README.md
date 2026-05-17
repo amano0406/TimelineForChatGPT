@@ -115,7 +115,7 @@ already running, refresh returns an error instead of starting Docker implicitly.
 
 ## Supported Item Operations
 
-The supported item commands are:
+The supported item operations are:
 
 - `items refresh`: convert one ChatGPT export ZIP.
 - `items list`: list generated conversation items.

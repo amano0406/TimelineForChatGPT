@@ -17,7 +17,7 @@ cd C:\apps\TimelineForChatGPT
 
 ## Host Python Tests
 
-Host Python worker command execution is blocked for normal operation. Unit tests may use:
+Direct host Python worker execution is blocked for normal operation. Unit tests may use:
 
 PowerShell:
 

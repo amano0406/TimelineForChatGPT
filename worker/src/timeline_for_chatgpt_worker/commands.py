@@ -230,7 +230,7 @@ def docker_only_command_guard_message(is_docker_file: bool | None = None) -> str
     if truthy_env(HOST_RUN_ALLOW_ENV):
         return None
     return (
-        "TimelineForChatGPT worker commands are Docker-only in normal use. "
+        "TimelineForChatGPT worker operations are Docker-only in normal use. "
         "Run it with `docker compose exec -T worker python -m timeline_for_chatgpt_worker <command>`, "
         f"or set {HOST_RUN_ALLOW_ENV}=1 for tests only."
     )
