@@ -24,7 +24,7 @@ from .settings_commands import (
     settings_status_payload,
 )
 
-HOST_CLI_ALLOW_ENV = "TIMELINE_FOR_CHATGPT_ALLOW_HOST_CLI"
+HOST_RUN_ALLOW_ENV = "TIMELINE_FOR_CHATGPT_ALLOW_HOST_RUN"
 DOCKER_RUNTIME_ENV = "TIMELINE_FOR_CHATGPT_DOCKER"
 
 
@@ -114,7 +114,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    guard_message = docker_only_cli_guard_message()
+    guard_message = docker_only_command_guard_message()
     if guard_message:
         print(guard_message, file=sys.stderr)
         return 2
@@ -223,16 +223,16 @@ def main(argv: list[str] | None = None) -> int:
         time.sleep(max(1, int(args.poll_interval)))
 
 
-def docker_only_cli_guard_message(is_docker_file: bool | None = None) -> str | None:
+def docker_only_command_guard_message(is_docker_file: bool | None = None) -> str | None:
     detected_docker_file = Path("/.dockerenv").exists() if is_docker_file is None else is_docker_file
     if truthy_env(DOCKER_RUNTIME_ENV) or detected_docker_file:
         return None
-    if truthy_env(HOST_CLI_ALLOW_ENV):
+    if truthy_env(HOST_RUN_ALLOW_ENV):
         return None
     return (
-        "TimelineForChatGPT CLI is Docker-only. "
+        "TimelineForChatGPT worker commands are Docker-only in normal use. "
         "Run it with `docker compose exec -T worker python -m timeline_for_chatgpt_worker <command>`, "
-        f"or set {HOST_CLI_ALLOW_ENV}=1 for tests only."
+        f"or set {HOST_RUN_ALLOW_ENV}=1 for tests only."
     )
 
 

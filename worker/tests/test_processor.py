@@ -10,9 +10,9 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
-from timeline_for_chatgpt_worker.cli import (
+from timeline_for_chatgpt_worker.commands import (
     create_run_from_input,
-    docker_only_cli_guard_message,
+    docker_only_command_guard_message,
     items_download_latest,
     items_list_payload,
     items_refresh_from_file,
@@ -24,17 +24,17 @@ from timeline_for_chatgpt_worker.refresh import build_config_check
 
 
 class ProcessRunTests(unittest.TestCase):
-    def test_cli_rejects_host_execution_without_explicit_test_override(self) -> None:
+    def test_worker_command_rejects_host_execution_without_explicit_test_override(self) -> None:
         with patch.dict(
             os.environ,
             {
                 "TIMELINE_FOR_CHATGPT_DOCKER": "",
-                "TIMELINE_FOR_CHATGPT_ALLOW_HOST_CLI": "",
+                "TIMELINE_FOR_CHATGPT_ALLOW_HOST_RUN": "",
             },
         ):
             self.assertIn(
                 "Docker-only",
-                docker_only_cli_guard_message(is_docker_file=False) or "",
+                docker_only_command_guard_message(is_docker_file=False) or "",
             )
 
     def test_settings_init_creates_settings_from_example(self) -> None:
@@ -45,7 +45,7 @@ class ProcessRunTests(unittest.TestCase):
             example_payload = {"outputRoot": str(root / "output")}
             example_path.write_text(json.dumps(example_payload), encoding="utf-8")
 
-            with patch.dict(os.environ, {"TIMELINE_FOR_CHATGPT_ALLOW_HOST_CLI": "1"}):
+            with patch.dict(os.environ, {"TIMELINE_FOR_CHATGPT_ALLOW_HOST_RUN": "1"}):
                 exit_code = main(
                     [
                         "settings",
@@ -352,7 +352,7 @@ class ProcessRunTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "No enabled inputRoots directories exist"):
                 refresh_from_config(config_path)
 
-    def test_cli_run_creation_processes_zip_without_copying_input(self) -> None:
+    def test_worker_command_run_creation_processes_zip_without_copying_input(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             source_dir = root / "source"
@@ -367,7 +367,7 @@ class ProcessRunTests(unittest.TestCase):
                             {
                                 "id": "conv-1",
                                 "conversation_id": "conv-1",
-                                "title": "CLI",
+                                "title": "Worker command",
                                 "current_node": "n1",
                                 "mapping": {
                                     "n1": {
@@ -380,7 +380,7 @@ class ProcessRunTests(unittest.TestCase):
                                             "create_time": "2026-01-01T00:00:00Z",
                                             "content": {
                                                 "content_type": "text",
-                                                "parts": ["hello from cli"],
+                                                "parts": ["hello from worker command"],
                                             },
                                         },
                                     }
@@ -395,7 +395,7 @@ class ProcessRunTests(unittest.TestCase):
                 input_path=upload_path,
                 output_root=output_root,
                 profile="timeline-default",
-                run_id="run-cli",
+                run_id="run-command",
             )
             process_run(run_dir)
 
@@ -405,7 +405,7 @@ class ProcessRunTests(unittest.TestCase):
             self.assertEqual(request["input_items"][0]["uploaded_path"], str(upload_path))
             self.assertTrue(upload_path.exists())
             self.assertEqual(status["state"], "completed")
-            self.assertTrue((run_dir / "run-cli.zip").exists())
+            self.assertTrue((run_dir / "run-command.zip").exists())
 
     def test_archive_contains_final_run_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

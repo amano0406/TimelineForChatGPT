@@ -6,7 +6,7 @@ TimelineForChatGPT converts one ChatGPT export ZIP into per-conversation timelin
 
 The output is designed to be easy to inspect, package, and hand off to another Timeline product or an LLM workflow.
 
-`start.ps1` also starts a small local API on the Windows host. The API is used by Timeline for product operations; host CLI launchers are legacy maintenance tools.
+`start.ps1` also starts a small local API on the Windows host. The API is used by Timeline for product operations; host CLI launchers have been removed.
 
 ## Runtime
 
@@ -110,7 +110,7 @@ Supported API routes:
 `POST /items/list`, `POST /items/download`, `POST /items/detail`, and
 `POST /settings/status` are handled directly by the local C# API from the
 generated artifacts and `settings.json`. `POST /items/refresh` invokes the
-Docker worker directly from C# and does not call host CLI launchers. If the worker is not
+Docker worker directly from C#. If the worker is not
 already running, refresh returns an error instead of starting Docker implicitly.
 
 ## Supported Item Operations
@@ -122,7 +122,7 @@ The supported item commands are:
 - `items detail`: read one generated conversation timeline for detail preview.
 - `items download`: create a handoff ZIP from generated items.
 
-This product does not provide `items remove`. Source ZIP deletion and generated-data cleanup are outside the current CLI contract.
+This product does not provide `items remove`. Source ZIP deletion and generated-data cleanup are outside the current API contract.
 
 ## Common API Calls
 
