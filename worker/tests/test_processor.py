@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
-from timeline_for_chatgpt_worker.commands import (
+from timeline_for_chatgpt_worker.operations import (
     create_run_from_input,
     docker_only_command_guard_message,
     items_download_latest,
@@ -24,7 +24,7 @@ from timeline_for_chatgpt_worker.refresh import build_config_check
 
 
 class ProcessRunTests(unittest.TestCase):
-    def test_worker_command_rejects_host_execution_without_explicit_test_override(self) -> None:
+    def test_worker_operation_rejects_host_execution_without_explicit_test_override(self) -> None:
         with patch.dict(
             os.environ,
             {
@@ -157,7 +157,7 @@ class ProcessRunTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            from timeline_for_chatgpt_worker.settings_commands import settings_output_set_payload
+            from timeline_for_chatgpt_worker.settings_operations import settings_output_set_payload
 
             settings_output_set_payload(settings_path, str(root / "new"))
 
@@ -352,7 +352,7 @@ class ProcessRunTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "No enabled inputRoots directories exist"):
                 refresh_from_config(config_path)
 
-    def test_worker_command_run_creation_processes_zip_without_copying_input(self) -> None:
+    def test_worker_operation_run_creation_processes_zip_without_copying_input(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             source_dir = root / "source"
@@ -367,7 +367,7 @@ class ProcessRunTests(unittest.TestCase):
                             {
                                 "id": "conv-1",
                                 "conversation_id": "conv-1",
-                                "title": "Worker command",
+                                "title": "Worker operation",
                                 "current_node": "n1",
                                 "mapping": {
                                     "n1": {

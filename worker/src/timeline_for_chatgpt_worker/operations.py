@@ -7,8 +7,8 @@ from pathlib import Path
 import sys
 import time
 
-from .directory_refresh_commands import refresh_from_config
-from .items_commands import (
+from .directory_refresh_operations import refresh_from_config
+from .items_operations import (
     DEFAULT_ITEMS_LIST_PAGE_SIZE,
     items_download_latest,
     items_list_payload,
@@ -17,8 +17,8 @@ from .items_commands import (
 from .processor import outputs_root, process_pending_runs, process_run
 from .refresh import build_config_check, default_settings_path, init_settings
 from .run_requests import create_run_from_input
-from .runs_commands import runs_list_payload, runs_show_payload
-from .settings_commands import (
+from .runs_operations import runs_list_payload, runs_show_payload
+from .settings_operations import (
     settings_output_set_payload,
     settings_output_show_payload,
     settings_status_payload,

@@ -1,3 +1,3 @@
-from .commands import main
+from .operations import main
 
 raise SystemExit(main())
