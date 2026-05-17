@@ -2,14 +2,14 @@
 
 [Back to README](../README.md)
 
-## Docker Unit Tests
+## Unit Tests
 
 ```powershell
 cd C:\apps\TimelineForChatGPT
 .\scripts\test.ps1
 ```
 
-## Combined Test
+## API Smoke
 
 ```powershell
 .\scripts\test.ps1 -IncludeLocalApiSmoke

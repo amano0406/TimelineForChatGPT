@@ -221,6 +221,87 @@ class ProcessRunTests(unittest.TestCase):
             self.assertTrue((runs_root / "current.json").exists())
             self.assertTrue((runs_root / "refresh-history.jsonl").exists())
 
+    def test_api_server_dispatches_refresh_list_detail_and_download(self) -> None:
+        from timeline_for_chatgpt_worker.api_server import handle_request
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            export_path = root / "chatgpt-export.zip"
+            write_thread_export_with_tool(export_path)
+            settings_path = root / "settings.json"
+            output_root = root / "output"
+            settings_path.write_text(json.dumps({"outputRoot": str(output_root)}), encoding="utf-8")
+            env = {
+                "TIMELINE_FOR_CHATGPT_SETTINGS": str(settings_path),
+                "TIMELINE_FOR_CHATGPT_OUTPUTS_ROOT": str(root / ".app-data" / "runs"),
+                "TIMELINE_FOR_CHATGPT_STATE_ROOT": str(root / ".app-data" / "state"),
+                "TIMELINE_FOR_CHATGPT_CACHE_ROOT": str(root / ".app-data" / "cache"),
+            }
+
+            with patch.dict(os.environ, env, clear=False):
+                status, health = handle_request("GET", "/health", None)
+                self.assertEqual(int(status), 200)
+                self.assertIs(health, True)
+
+                status, refresh_payload = handle_request(
+                    "POST",
+                    "/items/refresh",
+                    {
+                        "filePath": str(export_path),
+                        "downloadTo": str(root / "handoff"),
+                    },
+                )
+                self.assertEqual(int(status), 200)
+                self.assertEqual(refresh_payload["state"], "completed")
+                self.assertEqual(refresh_payload["manifest"]["item_count"], 1)
+
+                status, list_payload = handle_request("POST", "/items/list", {"page": 1, "pageSize": 10})
+                self.assertEqual(int(status), 200)
+                self.assertEqual(list_payload["item_count"], 1)
+                self.assertEqual(list_payload["pagination"]["returned_items"], 1)
+
+                status, detail_payload = handle_request("POST", "/items/detail", {"itemId": "conv-master"})
+                self.assertEqual(int(status), 200)
+                self.assertTrue(detail_payload["available"])
+                self.assertEqual(detail_payload["itemId"], "conv-master")
+                self.assertEqual([message["role"] for message in detail_payload["messages"]], ["system", "user", "assistant"])
+
+                status, download_payload = handle_request(
+                    "POST",
+                    "/items/download",
+                    {"to": str(root / "second-handoff"), "overwrite": True},
+                )
+                self.assertEqual(int(status), 200)
+                self.assertTrue(Path(str(download_payload["download_path"])).exists())
+
+    def test_api_server_converts_docker_paths_to_host_paths(self) -> None:
+        from timeline_for_chatgpt_worker.api_server import convert_response_paths
+        from timeline_for_chatgpt_worker.api_server import to_container_path
+
+        with patch.dict(
+            os.environ,
+            {
+                "TIMELINE_FOR_CHATGPT_DOCKER": "1",
+                "TIMELINE_FOR_CHATGPT_HOST_OUTPUT_ROOT": "C:\\TimelineData\\chatgpt",
+                "TIMELINE_FOR_CHATGPT_HOST_SETTINGS_PATH": "C:\\apps\\TimelineForChatGPT\\settings.json",
+            },
+            clear=False,
+        ):
+            self.assertEqual(to_container_path("C:\\Exports\\chatgpt.zip"), "/mnt/c/Exports/chatgpt.zip")
+            converted = convert_response_paths(
+                {
+                    "settings_path": "/workspace/settings.json",
+                    "output_root": "/workspace/output",
+                    "timeline_path": "/workspace/output/conv-master/timeline.json",
+                    "download_path": "/mnt/c/Users/amano/Downloads/export.zip",
+                }
+            )
+
+        self.assertEqual(converted["settings_path"], "C:\\apps\\TimelineForChatGPT\\settings.json")
+        self.assertEqual(converted["output_root"], "C:\\TimelineData\\chatgpt")
+        self.assertEqual(converted["timeline_path"], "C:\\TimelineData\\chatgpt\\conv-master\\timeline.json")
+        self.assertEqual(converted["download_path"], "C:\\Users\\amano\\Downloads\\export.zip")
+
     def test_items_list_paginates_latest_first(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

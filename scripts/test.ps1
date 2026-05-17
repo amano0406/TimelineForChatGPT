@@ -7,10 +7,6 @@ param(
 
 . "$PSScriptRoot\common.ps1"
 Initialize-TimelineForChatGPTSettings
-dotnet build .\api\TimelineForChatGPT.HealthApi.csproj
-if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
-}
 $docker = Get-TimelineForChatGPTDockerCommand
 $composeArgs = Get-TimelineForChatGPTComposeArguments
 $upArgs = @($composeArgs) + @("up", "-d", "--build", "worker")

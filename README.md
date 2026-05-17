@@ -6,7 +6,7 @@ TimelineForChatGPT converts one ChatGPT export ZIP into per-conversation timelin
 
 The output is designed to be easy to inspect, package, and hand off to another Timeline product or an LLM workflow.
 
-`start.ps1` also starts a small local API on the Windows host. The API is used by Timeline for product operations.
+`start.ps1` starts a Docker worker container that also serves the local API used by Timeline for product operations.
 
 ## Runtime
 
@@ -15,10 +15,7 @@ cd C:\apps\TimelineForChatGPT
 .\start.ps1
 ```
 
-`start.ps1` starts:
-
-- `worker`: Python conversion worker.
-- native API: C# local API for health and item operations.
+`start.ps1` starts the Compose-managed `worker` service. The worker hosts the Python conversion code and the local HTTP API.
 
 Stop the services without deleting generated data:
 
@@ -48,7 +45,7 @@ Expected shape:
 ```
 
 - `runtime.instanceName` scopes the Docker Compose project.
-- `runtime.apiPort` controls the local health API port.
+- `runtime.apiPort` controls the local API port.
 - `outputRoot` is where current timeline artifacts are written.
 
 Unknown product-specific settings are preserved by settings updates.
@@ -95,7 +92,7 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:19300/items/download -Body 
 Invoke-RestMethod http://127.0.0.1:19300/health
 ```
 
-The endpoint returns a JSON boolean: `true` when the settings file is readable and has a valid `outputRoot` / `runtime.apiPort`, otherwise `false`.
+The endpoint returns a JSON boolean. A successful response means the worker API is reachable.
 
 Supported API routes:
 
@@ -107,11 +104,9 @@ Supported API routes:
 - `POST /settings/status`
 - `POST /settings/init`
 
-`POST /items/list`, `POST /items/download`, `POST /items/detail`, and
-`POST /settings/status` are handled directly by the local C# API from the
-generated artifacts and `settings.json`. `POST /items/refresh` invokes the
-Docker worker directly from C#. If the worker is not
-already running, refresh returns an error instead of starting Docker implicitly.
+These routes are served by the resident Python worker container. API calls do
+not call host launchers, do not start Docker implicitly, and do not spawn a
+Python operation process for each request.
 
 ## Supported Item Operations
 

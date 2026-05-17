@@ -8,17 +8,30 @@ services:
     working_dir: /workspace
     environment:
       TIMELINE_FOR_CHATGPT_DOCKER: "1"
+      TIMELINE_FOR_CHATGPT_API_BIND_HOST: 0.0.0.0
+      TIMELINE_FOR_CHATGPT_API_BIND_PORT: 8080
       TIMELINE_FOR_CHATGPT_SETTINGS: /workspace/settings.json
+      TIMELINE_FOR_CHATGPT_SETTINGS_EXAMPLE: /app/settings.example.json
+      TIMELINE_FOR_CHATGPT_HOST_SETTINGS_PATH: ${TIMELINE_FOR_CHATGPT_HOST_SETTINGS_PATH:-./settings.json}
+      TIMELINE_FOR_CHATGPT_HOST_OUTPUT_ROOT: ${TIMELINE_FOR_CHATGPT_HOST_OUTPUT_ROOT:-C:/TimelineData/chatgpt}
       TIMELINE_FOR_CHATGPT_OUTPUT_ROOT: /workspace/output
       TIMELINE_FOR_CHATGPT_APPDATA_ROOT: /shared/app-data
       TIMELINE_FOR_CHATGPT_CACHE_ROOT: /shared/cache
       TIMELINE_FOR_CHATGPT_UPLOADS_ROOT: /tmp/timeline-for-chatgpt/uploads
       TIMELINE_FOR_CHATGPT_OUTPUTS_ROOT: /shared/app-data/runs
+    ports:
+      - "127.0.0.1:${TIMELINE_FOR_CHATGPT_API_PORT:-19300}:8080"
     volumes:
       - "${TIMELINE_FOR_CHATGPT_HOST_SETTINGS_PATH:-./settings.json}:/workspace/settings.json"
       - "${TIMELINE_FOR_CHATGPT_HOST_OUTPUT_ROOT:-C:/TimelineData/chatgpt}:/workspace/output"
       - "${TIMELINE_FOR_CHATGPT_HOST_APPDATA_ROOT:-app-data}:/shared/app-data"
       - "${TIMELINE_FOR_CHATGPT_HOST_CACHE_ROOT:-cache-data}:/shared/cache"
+      - type: bind
+        source: ${TIMELINE_FOR_CHATGPT_C_DRIVE_MOUNT:-/mnt/c}
+        target: /mnt/c
+      - type: bind
+        source: ${TIMELINE_FOR_CHATGPT_F_DRIVE_MOUNT:-/mnt/f}
+        target: /mnt/f
 
 volumes:
   app-data:
