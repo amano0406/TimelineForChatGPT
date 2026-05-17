@@ -30,7 +30,7 @@ DOCKER_RUNTIME_ENV = "TIMELINE_FOR_CHATGPT_DOCKER"
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="TimelineForChatGPT worker")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest="operation", required=True)
 
     process = subparsers.add_parser("process", help="Create and run a run for one ChatGPT export.")
     process.add_argument("input_path", help="Path to a ChatGPT export ZIP or extracted export directory.")
@@ -50,7 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     config_check.add_argument("--config", help="Deprecated alias for --settings.")
 
     settings = subparsers.add_parser("settings", help="Manage persistent settings.")
-    settings_subparsers = settings.add_subparsers(dest="settings_command", required=True)
+    settings_subparsers = settings.add_subparsers(dest="settings_operation", required=True)
     settings_init = settings_subparsers.add_parser("init", help="Create settings.json if it does not exist.")
     settings_init.add_argument("--settings", help="Settings JSON path. Defaults to settings.json.")
     settings_init.add_argument("--example", help="Example settings JSON path. Defaults to settings.example.json.")
@@ -58,7 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
     settings_status.add_argument("--settings", help="Settings JSON path. Defaults to settings.json.")
     settings_status.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     settings_output = settings_subparsers.add_parser("output", help="Manage the fixed output root.")
-    settings_output_subparsers = settings_output.add_subparsers(dest="settings_output_command", required=True)
+    settings_output_subparsers = settings_output.add_subparsers(dest="settings_output_operation", required=True)
     settings_output_show = settings_output_subparsers.add_parser("show", help="Show the resolved output root.")
     settings_output_show.add_argument("--settings", help="Settings JSON path. Defaults to settings.json.")
     settings_output_show.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
@@ -68,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     settings_output_set.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
 
     items = subparsers.add_parser("items", help="Refresh, list, and download ChatGPT conversation items.")
-    items_subparsers = items.add_subparsers(dest="items_command", required=True)
+    items_subparsers = items.add_subparsers(dest="items_operation", required=True)
     items_list = items_subparsers.add_parser("list", help="List current output items.")
     items_list.add_argument("--settings", help="Settings JSON path. Defaults to settings.json.")
     items_list.add_argument(
@@ -97,7 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     items_download.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
 
     runs = subparsers.add_parser("runs", help="Inspect refresh runs.")
-    runs_subparsers = runs.add_subparsers(dest="runs_command", required=True)
+    runs_subparsers = runs.add_subparsers(dest="runs_operation", required=True)
     runs_list = runs_subparsers.add_parser("list", help="List known runs.")
     runs_list.add_argument("--settings", help="Settings JSON path. Defaults to settings.json.")
     runs_list.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
@@ -114,7 +114,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    guard_message = docker_only_command_guard_message()
+    guard_message = docker_only_operation_guard_message()
     if guard_message:
         print(guard_message, file=sys.stderr)
         return 2
@@ -122,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if args.command == "process":
+    if args.operation == "process":
         run_dir = create_run_from_input(
             input_path=Path(args.input_path),
             output_root=Path(args.output_root) if args.output_root else outputs_root(),
@@ -134,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
         print(run_dir)
         return 0
 
-    if args.command == "refresh":
+    if args.operation == "refresh":
         report = refresh_from_config(
             config_path=resolve_settings_arg(args),
             dry_run=bool(args.dry_run),
@@ -143,12 +143,12 @@ def main(argv: list[str] | None = None) -> int:
         print(report["report_path"])
         return 0
 
-    if args.command == "config-check":
+    if args.operation == "config-check":
         report = build_config_check(resolve_settings_arg(args))
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0
 
-    if args.command == "settings" and args.settings_command == "init":
+    if args.operation == "settings" and args.settings_operation == "init":
         settings_path = init_settings(
             settings_path=Path(args.settings) if args.settings else default_settings_path(),
             example_path=Path(args.example) if args.example else None,
@@ -156,17 +156,17 @@ def main(argv: list[str] | None = None) -> int:
         print(settings_path)
         return 0
 
-    if args.command == "settings" and args.settings_command == "status":
+    if args.operation == "settings" and args.settings_operation == "status":
         payload = settings_status_payload(resolve_settings_arg(args))
         print_payload(payload, bool(args.json), text_key="summary")
         return 0
 
-    if args.command == "settings" and args.settings_command == "output":
-        if args.settings_output_command == "show":
+    if args.operation == "settings" and args.settings_operation == "output":
+        if args.settings_output_operation == "show":
             payload = settings_output_show_payload(resolve_settings_arg(args))
             print_payload(payload, bool(args.json), text_key="output_root")
             return 0
-        if args.settings_output_command == "set":
+        if args.settings_output_operation == "set":
             payload = settings_output_set_payload(
                 settings_path=resolve_settings_arg(args),
                 path_value=str(args.path),
@@ -174,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
             print_payload(payload, bool(args.json), text_key="output_root")
             return 0
 
-    if args.command == "items" and args.items_command == "list":
+    if args.operation == "items" and args.items_operation == "list":
         paging_requested = args.page is not None or args.page_size is not None
         payload = items_list_payload(
             resolve_settings_arg(args),
@@ -185,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
         print_payload(payload, bool(args.json), text_key="summary")
         return 0
 
-    if args.command == "items" and args.items_command == "refresh":
+    if args.operation == "items" and args.items_operation == "refresh":
         payload = items_refresh_from_file(
             file_path=Path(args.file),
             settings_path=resolve_settings_arg(args),
@@ -195,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
         print_payload(payload, bool(args.json), text_key="summary")
         return 0
 
-    if args.command == "items" and args.items_command == "download":
+    if args.operation == "items" and args.items_operation == "download":
         payload = items_download_latest(
             settings_path=resolve_settings_arg(args),
             destination=Path(args.to),
@@ -204,17 +204,17 @@ def main(argv: list[str] | None = None) -> int:
         print_payload(payload, bool(args.json), text_key="download_path")
         return 0
 
-    if args.command == "runs" and args.runs_command == "list":
+    if args.operation == "runs" and args.runs_operation == "list":
         payload = runs_list_payload(resolve_settings_arg(args))
         print_payload(payload, bool(args.json), text_key="summary")
         return 0
 
-    if args.command == "runs" and args.runs_command == "show":
+    if args.operation == "runs" and args.runs_operation == "show":
         payload = runs_show_payload(resolve_settings_arg(args), str(args.run_id))
         print_payload(payload, bool(args.json), text_key="summary")
         return 0
 
-    if args.command == "run-once":
+    if args.operation == "run-once":
         process_pending_runs()
         return 0
 
@@ -223,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
         time.sleep(max(1, int(args.poll_interval)))
 
 
-def docker_only_command_guard_message(is_docker_file: bool | None = None) -> str | None:
+def docker_only_operation_guard_message(is_docker_file: bool | None = None) -> str | None:
     detected_docker_file = Path("/.dockerenv").exists() if is_docker_file is None else is_docker_file
     if truthy_env(DOCKER_RUNTIME_ENV) or detected_docker_file:
         return None
@@ -231,7 +231,7 @@ def docker_only_command_guard_message(is_docker_file: bool | None = None) -> str
         return None
     return (
         "TimelineForChatGPT worker operations are Docker-only in normal use. "
-        "Run it with `docker compose exec -T worker python -m timeline_for_chatgpt_worker <command>`, "
+        "Run it with `docker compose exec -T worker python -m timeline_for_chatgpt_worker <operation>`, "
         f"or set {HOST_RUN_ALLOW_ENV}=1 for tests only."
     )
 

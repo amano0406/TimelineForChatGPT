@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from timeline_for_chatgpt_worker.operations import (
     create_run_from_input,
-    docker_only_command_guard_message,
+    docker_only_operation_guard_message,
     items_download_latest,
     items_list_payload,
     items_refresh_from_file,
@@ -34,7 +34,7 @@ class ProcessRunTests(unittest.TestCase):
         ):
             self.assertIn(
                 "Docker-only",
-                docker_only_command_guard_message(is_docker_file=False) or "",
+                docker_only_operation_guard_message(is_docker_file=False) or "",
             )
 
     def test_settings_init_creates_settings_from_example(self) -> None:
@@ -395,7 +395,7 @@ class ProcessRunTests(unittest.TestCase):
                 input_path=upload_path,
                 output_root=output_root,
                 profile="timeline-default",
-                run_id="run-command",
+                run_id="run-operation",
             )
             process_run(run_dir)
 
@@ -405,7 +405,7 @@ class ProcessRunTests(unittest.TestCase):
             self.assertEqual(request["input_items"][0]["uploaded_path"], str(upload_path))
             self.assertTrue(upload_path.exists())
             self.assertEqual(status["state"], "completed")
-            self.assertTrue((run_dir / "run-command.zip").exists())
+            self.assertTrue((run_dir / "run-operation.zip").exists())
 
     def test_archive_contains_final_run_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
