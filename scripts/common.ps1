@@ -82,6 +82,7 @@ function Initialize-TimelineForChatGPTSettings {
     Initialize-TimelineForChatGPTWorkspace
     $settingsPath = Get-TimelineForChatGPTSettingsPath
     $env:TIMELINE_FOR_CHATGPT_HOST_SETTINGS_PATH = $settingsPath
+    Initialize-TimelineForChatGPTDriveMounts
     if (-not (Test-Path -LiteralPath $settingsPath)) {
         $settingsDir = Split-Path -Parent $settingsPath
         if ($settingsDir -and -not (Test-Path -LiteralPath $settingsDir)) {
@@ -106,6 +107,32 @@ function Initialize-TimelineForChatGPTSettings {
     }
     $env:TIMELINE_FOR_CHATGPT_API_PORT = [string]$runtime.ApiPort
     $env:TIMELINE_FOR_CHATGPT_COMPOSE_PROJECT = [string]$runtime.ComposeProject
+}
+
+function Initialize-TimelineForChatGPTDriveMounts {
+    if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
+        return
+    }
+
+    Set-TimelineForChatGPTDriveMountDefault -Name "TIMELINE_FOR_CHATGPT_C_DRIVE_MOUNT" -DriveRoot "C:\"
+    Set-TimelineForChatGPTDriveMountDefault -Name "TIMELINE_FOR_CHATGPT_F_DRIVE_MOUNT" -DriveRoot "F:\"
+}
+
+function Set-TimelineForChatGPTDriveMountDefault {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$DriveRoot
+    )
+
+    $current = [Environment]::GetEnvironmentVariable($Name, "Process")
+    if (-not [string]::IsNullOrWhiteSpace($current)) {
+        return
+    }
+    if (-not (Test-Path -LiteralPath $DriveRoot)) {
+        return
+    }
+    $resolved = (Resolve-Path -LiteralPath $DriveRoot).Path.Replace('\', '/')
+    Set-Item -Path "Env:$Name" -Value $resolved
 }
 
 function Get-TimelineForChatGPTDockerCommand {
