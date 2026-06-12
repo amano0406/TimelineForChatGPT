@@ -25,6 +25,7 @@ def normalize_export(
     run_dir: Path,
     request: RunRequest,
     on_progress: Callable[[dict[str, Any]], None] | None = None,
+    cancel_check: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     export_root, input_name, cleanup_root = prepare_export_root(run_dir, request)
     try:
@@ -54,6 +55,8 @@ def normalize_export(
             )
 
         for index, conversation in enumerate(conversations, start=1):
+            if cancel_check is not None:
+                cancel_check("parse_conversations")
             normalized = normalize_conversation(conversation, request, export_root)
             summary = normalized["summary"]
             messages = normalized["messages"]
@@ -89,6 +92,8 @@ def normalize_export(
             )
 
             conversation_dir = ensure_dir(conversations_root / summary["conversation_id"])
+            if cancel_check is not None:
+                cancel_check("write_conversation")
             write_json(conversation_dir / "conversation.json", conversation)
             write_jsonl(conversation_dir / "messages.jsonl", messages)
             write_jsonl(conversation_dir / "events.jsonl", events)
@@ -108,6 +113,8 @@ def normalize_export(
                 )
 
         write_jsonl(run_dir / "conversation_index.jsonl", conversation_rows)
+        if cancel_check is not None:
+            cancel_check("build_indexes")
         export_summary = {
             "run_id": request.run_id,
             "input_name": input_name,
@@ -132,7 +139,7 @@ def normalize_export(
                 }
             )
 
-        batch_count = build_llm_pack(llm_root, conversation_rows, conversations_root)
+        batch_count = build_llm_pack(llm_root, conversation_rows, conversations_root, cancel_check=cancel_check)
         archive_path = run_dir / f"{request.run_id}.zip"
 
         return {

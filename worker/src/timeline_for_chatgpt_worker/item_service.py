@@ -21,6 +21,7 @@ def items_refresh_from_file(
     settings_path: Path,
     download_to: Path | None = None,
     overwrite: bool = False,
+    run_id: str | None = None,
 ) -> dict[str, object]:
     config = load_runtime_config(settings_path)
     warnings = validate_runtime_config(config, require_input_roots=False)
@@ -33,13 +34,22 @@ def items_refresh_from_file(
             input_path=file_path,
             output_root=config.run_root,
             profile=config.profile,
+            run_id=run_id,
             source_id="file",
         )
         started_at = now_iso()
         process_run(run_dir)
         status = load_json(run_dir / "status.json")
         result = load_json(run_dir / "result.json")
-        if str(result.get("state") or status.get("state") or "").lower() != "completed":
+        state = str(result.get("state") or status.get("state") or "").lower()
+        if state == "canceled":
+            return {
+                "schema_version": 1,
+                "state": "canceled",
+                "summary": "ChatGPT import was canceled.",
+                "run_dir": str(run_dir),
+            }
+        if state != "completed":
             raise RuntimeError(str(status.get("message") or result.get("warnings") or "refresh failed"))
 
         manifest = rebuild_master_from_run(run_dir, config.output_root)

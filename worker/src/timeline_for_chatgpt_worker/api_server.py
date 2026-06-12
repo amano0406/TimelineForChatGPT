@@ -8,11 +8,17 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 from .item_service import DEFAULT_ITEMS_LIST_PAGE_SIZE
 from .item_service import items_download_latest
 from .item_service import items_list_payload
 from .item_service import items_refresh_from_file
+from .job_service import active_job_payload
+from .job_service import cancel_job
+from .job_service import job_status_payload
+from .job_service import jobs_list_payload
+from .job_service import start_refresh_job
 from .refresh import default_settings_path
 from .refresh import init_settings
 from .settings_service import settings_status_payload
@@ -25,6 +31,13 @@ def handle_request(method: str, path: str, request: dict[str, Any] | None) -> tu
     route = path.rstrip("/") or "/"
     if method == "GET" and route == "/health":
         return HTTPStatus.OK, True
+    if method == "GET" and route == "/jobs":
+        return HTTPStatus.OK, convert_response_paths(jobs_list_payload(default_settings_path()))
+    if method == "GET" and route == "/jobs/active":
+        return HTTPStatus.OK, convert_response_paths(active_job_payload(default_settings_path()))
+    if method == "GET" and route.startswith("/jobs/"):
+        job_id = unquote(route[len("/jobs/") :]).strip()
+        return HTTPStatus.OK, convert_response_paths(job_status_payload(default_settings_path(), job_id))
     if method != "POST":
         return HTTPStatus.NOT_FOUND, error_payload(f"Endpoint not found: {method} {path}")
 
@@ -42,6 +55,11 @@ def handle_request(method: str, path: str, request: dict[str, Any] | None) -> tu
             return HTTPStatus.OK, convert_response_paths(items_refresh_response(payload))
         if route == "/items/download":
             return HTTPStatus.OK, convert_response_paths(items_download_response(payload))
+        if route == "/jobs":
+            return HTTPStatus.OK, convert_response_paths(jobs_start_response(payload))
+        if route.startswith("/jobs/") and route.endswith("/cancel"):
+            job_id = unquote(route[len("/jobs/") : -len("/cancel")]).strip()
+            return HTTPStatus.OK, convert_response_paths(cancel_job(default_settings_path(), job_id))
     except Exception as exc:
         return HTTPStatus.INTERNAL_SERVER_ERROR, error_payload(str(exc), exc.__class__.__name__)
 
@@ -115,6 +133,25 @@ def items_download_response(request: dict[str, Any]) -> dict[str, object]:
         settings_path=default_settings_path(),
         destination=Path(to_container_path(destination)),
         overwrite=get_bool_any(request, ["overwrite"], False),
+    )
+
+
+def jobs_start_response(request: dict[str, Any]) -> dict[str, object]:
+    job_type = get_string_any(request, ["type"]) or "refresh"
+    if job_type and job_type.lower() != "refresh":
+        raise ValueError(f"Unsupported job type: {job_type}")
+
+    options = get_object_any(request, ["options"]) or request
+    file_path = get_string_any(options, ["filePath", "file", "inputPath", "input"])
+    if not file_path:
+        raise ValueError("ChatGPT export ZIP is required.")
+
+    download_to = get_string_any(options, ["downloadTo", "download_to", "to"])
+    return start_refresh_job(
+        file_path=Path(to_container_path(file_path)),
+        settings_path=default_settings_path(),
+        download_to=Path(to_container_path(download_to)) if download_to else None,
+        overwrite=get_bool_any(options, ["overwrite"], False),
     )
 
 
@@ -320,6 +357,14 @@ def get_string_any(request: dict[str, Any], names: list[str]) -> str:
         if text:
             return text
     return ""
+
+
+def get_object_any(request: dict[str, Any], names: list[str]) -> dict[str, Any] | None:
+    for name in names:
+        value = get_node(request, name)
+        if isinstance(value, dict):
+            return value
+    return None
 
 
 def get_string_from_mapping(source: dict[str, Any], names: list[str], fallback: str) -> str:

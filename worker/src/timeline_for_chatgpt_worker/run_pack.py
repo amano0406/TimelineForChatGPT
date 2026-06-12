@@ -3,16 +3,23 @@ from __future__ import annotations
 import zipfile
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .conversation_parts import month_bucket
 from .fs_utils import slugify, write_jsonl
 
 
-def build_llm_pack(llm_root: Path, conversation_rows: list[dict[str, Any]], conversations_root: Path) -> int:
+def build_llm_pack(
+    llm_root: Path,
+    conversation_rows: list[dict[str, Any]],
+    conversations_root: Path,
+    cancel_check: Callable[[str], None] | None = None,
+) -> int:
     write_jsonl(llm_root / "conversation_index.jsonl", conversation_rows)
     shards: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in conversation_rows:
+        if cancel_check is not None:
+            cancel_check("build_llm_pack")
         month_key = month_bucket(row.get("create_time") or row.get("update_time"))
         timeline_path = conversations_root / row["conversation_id"] / "timeline.md"
         content_markdown = timeline_path.read_text(encoding="utf-8", errors="replace") if timeline_path.exists() else ""
@@ -28,6 +35,8 @@ def build_llm_pack(llm_root: Path, conversation_rows: list[dict[str, Any]], conv
 
     batch_count = 0
     for month_key, items in sorted(shards.items()):
+        if cancel_check is not None:
+            cancel_check("write_llm_pack")
         batch_count += 1
         write_jsonl(llm_root / f"conversation_corpus-{month_key}.jsonl", items)
 
@@ -48,51 +57,69 @@ def build_llm_pack(llm_root: Path, conversation_rows: list[dict[str, Any]], conv
     return batch_count
 
 
-def build_archive(run_dir: Path, run_id: str, conversation_rows: list[dict[str, Any]], llm_root: Path) -> Path:
+def build_archive(
+    run_dir: Path,
+    run_id: str,
+    conversation_rows: list[dict[str, Any]],
+    llm_root: Path,
+    cancel_check: Callable[[str], None] | None = None,
+) -> Path:
     archive_path = run_dir / f"{run_id}.zip"
     if archive_path.exists():
         archive_path.unlink()
 
-    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr(
-            "README.md",
-            "\n".join(
-                [
-                    "# TimelineForChatGPT Export",
-                    "",
-                    f"- Run ID: `{run_id}`",
-                    "- Main folder: `timelines/`",
-                    "- `conversation_index.jsonl` provides the summary catalog.",
-                    "",
-                ]
-            ),
-        )
-        conversation_index_path = run_dir / "conversation_index.jsonl"
-        if conversation_index_path.exists():
-            archive.write(conversation_index_path, "conversation_index.jsonl")
-        for metadata_name in ("export_summary.json", "manifest.json", "result.json", "status.json"):
-            metadata_path = run_dir / metadata_name
-            if metadata_path.exists():
-                archive.write(metadata_path, metadata_name)
-        used_names: set[str] = set()
-        for row in conversation_rows:
-            timeline_path = run_dir / row["timeline_path"]
-            conversation_root = run_dir / "conversations" / row["conversation_id"]
-            if conversation_root.exists():
-                for candidate in sorted(conversation_root.rglob("*")):
+    try:
+        with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr(
+                "README.md",
+                "\n".join(
+                    [
+                        "# TimelineForChatGPT Export",
+                        "",
+                        f"- Run ID: `{run_id}`",
+                        "- Main folder: `timelines/`",
+                        "- `conversation_index.jsonl` provides the summary catalog.",
+                        "",
+                    ]
+                ),
+            )
+            conversation_index_path = run_dir / "conversation_index.jsonl"
+            if conversation_index_path.exists():
+                archive.write(conversation_index_path, "conversation_index.jsonl")
+            for metadata_name in ("export_summary.json", "manifest.json", "result.json", "status.json"):
+                if cancel_check is not None:
+                    cancel_check("build_archive")
+                metadata_path = run_dir / metadata_name
+                if metadata_path.exists():
+                    archive.write(metadata_path, metadata_name)
+            used_names: set[str] = set()
+            for row in conversation_rows:
+                if cancel_check is not None:
+                    cancel_check("build_archive")
+                timeline_path = run_dir / row["timeline_path"]
+                conversation_root = run_dir / "conversations" / row["conversation_id"]
+                if conversation_root.exists():
+                    for candidate in sorted(conversation_root.rglob("*")):
+                        if cancel_check is not None:
+                            cancel_check("build_archive")
+                        if candidate.is_file():
+                            archive.write(
+                                candidate,
+                                "conversations/"
+                                f"{row['conversation_id']}/{candidate.relative_to(conversation_root).as_posix()}",
+                            )
+                if timeline_path.exists():
+                    file_name = unique_timeline_export_name(row, used_names)
+                    archive.write(timeline_path, f"timelines/{file_name}")
+            if llm_root.exists():
+                for candidate in llm_root.rglob("*"):
+                    if cancel_check is not None:
+                        cancel_check("build_archive")
                     if candidate.is_file():
-                        archive.write(
-                            candidate,
-                            "conversations/"
-                            f"{row['conversation_id']}/{candidate.relative_to(conversation_root).as_posix()}",
-                        )
-            if timeline_path.exists():
-                file_name = unique_timeline_export_name(row, used_names)
-                archive.write(timeline_path, f"timelines/{file_name}")
-        if llm_root.exists():
-            for candidate in llm_root.rglob("*"):
-                if candidate.is_file():
-                    archive.write(candidate, f"llm/{candidate.relative_to(llm_root).as_posix()}")
+                        archive.write(candidate, f"llm/{candidate.relative_to(llm_root).as_posix()}")
+    except Exception:
+        archive_path.unlink(missing_ok=True)
+        raise
     return archive_path
 
 

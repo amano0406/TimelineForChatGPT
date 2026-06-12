@@ -4,6 +4,7 @@ import os
 import json
 import hashlib
 import tempfile
+import time
 import unittest
 import zipfile
 from pathlib import Path
@@ -199,6 +200,40 @@ class ProcessRunTests(unittest.TestCase):
                 )
                 self.assertEqual(int(status), 200)
                 self.assertTrue(Path(str(download_payload["download_path"])).exists())
+
+                status, job_payload = handle_request(
+                    "POST",
+                    "/jobs",
+                    {
+                        "type": "refresh",
+                        "options": {
+                            "filePath": str(export_path),
+                            "downloadTo": str(root / "third-handoff"),
+                            "overwrite": True,
+                        },
+                    },
+                )
+                self.assertEqual(int(status), 200)
+                self.assertEqual(job_payload["productId"], "chatgpt")
+                self.assertTrue(job_payload["jobId"])
+
+                final_job = job_payload
+                for _ in range(80):
+                    status, polled = handle_request("GET", f"/jobs/{job_payload['jobId']}", None)
+                    self.assertEqual(int(status), 200)
+                    final_job = polled
+                    if polled["state"] not in {"queued", "running", "pending", "processing", "starting"}:
+                        break
+                    time.sleep(0.1)
+
+                self.assertEqual(final_job["state"], "completed")
+                self.assertEqual(final_job["progress"]["total"], 1)
+                self.assertEqual(final_job["progress"]["current"], 1)
+                self.assertEqual(final_job["result"]["manifest"]["item_count"], 1)
+
+                status, active_payload = handle_request("GET", "/jobs/active", None)
+                self.assertEqual(int(status), 200)
+                self.assertIn(active_payload["state"], {"none", "completed"})
 
     def test_api_server_converts_docker_paths_to_host_paths(self) -> None:
         from timeline_for_chatgpt_worker.api_server import convert_response_paths

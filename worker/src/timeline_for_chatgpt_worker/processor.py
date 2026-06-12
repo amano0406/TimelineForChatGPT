@@ -9,6 +9,22 @@ from .fs_utils import append_log, ensure_dir, load_json, now_iso, write_json
 from .parser import normalize_export
 from .run_pack import build_archive
 
+CANCEL_REQUEST_FILE = ".cancel-requested"
+
+
+class RunCancellationRequested(RuntimeError):
+    pass
+
+
+def cancel_requested(run_dir: Path) -> bool:
+    return (run_dir / CANCEL_REQUEST_FILE).exists()
+
+
+def raise_if_cancel_requested(run_dir: Path, stage: str = "") -> None:
+    if cancel_requested(run_dir):
+        suffix = f" during {stage}" if stage else ""
+        raise RunCancellationRequested(f"Cancellation requested{suffix}.")
+
 
 def outputs_root() -> Path:
     return Path(os.environ.get("TIMELINE_FOR_CHATGPT_OUTPUTS_ROOT", "/shared/outputs"))
@@ -53,6 +69,7 @@ def process_run(run_dir: Path) -> None:
     append_log(log_path, f"[{now_iso()}] starting {request.run_id}")
 
     try:
+        raise_if_cancel_requested(run_dir, "starting")
         status.message = "Preparing export input."
         status.current_stage = "extract_zip"
         status.updated_at = now_iso()
@@ -64,6 +81,7 @@ def process_run(run_dir: Path) -> None:
 
         def handle_progress(payload: dict[str, object]) -> None:
             nonlocal last_logged_stage, last_logged_done
+            raise_if_cancel_requested(run_dir, str(payload.get("stage") or status.current_stage))
             status.current_stage = str(payload.get("stage") or status.current_stage)
             status.message = str(payload.get("message") or status.message)
             if "conversations_total" in payload:
@@ -90,7 +108,13 @@ def process_run(run_dir: Path) -> None:
                 last_logged_stage = status.current_stage
                 last_logged_done = status.conversations_done
 
-        normalized = normalize_export(run_dir, request, on_progress=handle_progress)
+        normalized = normalize_export(
+            run_dir,
+            request,
+            on_progress=handle_progress,
+            cancel_check=lambda stage: raise_if_cancel_requested(run_dir, stage),
+        )
+        raise_if_cancel_requested(run_dir, "finalize")
 
         status.current_stage = "completed"
         status.state = "completed"
@@ -118,8 +142,26 @@ def process_run(run_dir: Path) -> None:
         write_json(run_dir / "manifest.json", manifest)
         write_json(run_dir / "status.json", status.to_dict())
         write_json(run_dir / "result.json", result.to_dict())
-        build_archive(run_dir, request.run_id, normalized["conversation_rows"], run_dir / "llm")
+        build_archive(
+            run_dir,
+            request.run_id,
+            normalized["conversation_rows"],
+            run_dir / "llm",
+            cancel_check=lambda stage: raise_if_cancel_requested(run_dir, stage),
+        )
         append_log(log_path, f"[{now_iso()}] completed {request.run_id}")
+    except RunCancellationRequested as exc:
+        status.state = "canceled"
+        status.current_stage = "canceled"
+        status.message = str(exc) or "ChatGPT import was canceled."
+        status.updated_at = now_iso()
+        status.completed_at = status.updated_at
+        result.state = "canceled"
+        result.error_count = 0
+        result.warnings.append(str(exc))
+        write_json(run_dir / "status.json", status.to_dict())
+        write_json(run_dir / "result.json", result.to_dict())
+        append_log(log_path, f"[{now_iso()}] canceled {request.run_id}: {exc}")
     except Exception as exc:  # noqa: BLE001
         status.state = "failed"
         status.current_stage = "failed"
