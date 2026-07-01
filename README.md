@@ -17,10 +17,27 @@ cd C:\apps\TimelineForChatGPT
 
 `start.ps1` starts the Compose-managed `worker` service. The worker hosts the Python conversion code and the local HTTP API.
 
+Run from macOS or Linux:
+
+```bash
+./start.sh
+```
+
+The bash launcher starts the same Compose-managed worker service. If
+`settings.json` still contains a Windows-style `outputRoot`, the launcher uses
+`./output` as the host output directory so Docker Desktop on macOS/Linux can
+start with a valid bind mount.
+
 Stop the services without deleting generated data:
 
 ```powershell
 .\stop.ps1
+```
+
+On macOS or Linux:
+
+```bash
+./stop.sh
 ```
 
 ## Settings

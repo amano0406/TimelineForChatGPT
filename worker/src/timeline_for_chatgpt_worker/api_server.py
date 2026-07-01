@@ -25,6 +25,7 @@ from .settings_service import settings_status_payload
 
 
 WINDOWS_DRIVE_RE = re.compile(r"^([A-Za-z]):[\\/](.*)$")
+PATH_MAPPINGS_ENV = "TIMELINE_FOR_CHATGPT_PATH_MAPPINGS"
 
 
 def handle_request(method: str, path: str, request: dict[str, Any] | None) -> tuple[int, Any]:
@@ -272,6 +273,9 @@ def to_container_path(value: str) -> str:
         return ""
     if not in_container_runtime():
         return text
+    mapped = map_host_to_container_path(text)
+    if mapped:
+        return mapped
     match = WINDOWS_DRIVE_RE.match(text)
     if match:
         drive = match.group(1).lower()
@@ -284,6 +288,10 @@ def to_host_path(value: str) -> str:
     text = value.strip()
     if not text:
         return text
+
+    mapped = map_container_to_host_path(text)
+    if mapped:
+        return mapped
 
     host_settings = os.environ.get("TIMELINE_FOR_CHATGPT_HOST_SETTINGS_PATH", "").strip()
     if host_settings and text == "/workspace/settings.json":
@@ -304,6 +312,64 @@ def to_host_path(value: str) -> str:
         return f"{drive}:\\" + rest
 
     return text
+
+
+def map_host_to_container_path(value: str) -> str:
+    normalized_text = normalize_mapping_key(value)
+    for row in path_mappings():
+        host_key = normalize_mapping_key(row["host"])
+        if normalized_text == host_key:
+            return row["container"].rstrip("/")
+        if normalized_text.startswith(host_key + "/"):
+            relative = normalized_text[len(host_key) + 1 :]
+            return row["container"].rstrip("/") + "/" + relative
+    return ""
+
+
+def map_container_to_host_path(value: str) -> str:
+    normalized_text = normalize_mapping_key(value)
+    for row in path_mappings():
+        container_key = normalize_mapping_key(row["container"])
+        if normalized_text == container_key:
+            return row["host"].rstrip("\\/")
+        if normalized_text.startswith(container_key + "/"):
+            relative = normalized_text[len(container_key) + 1 :]
+            return join_host_path(row["host"], relative)
+    return ""
+
+
+def path_mappings() -> list[dict[str, str]]:
+    raw = os.environ.get(PATH_MAPPINGS_ENV, "")
+    if not raw:
+        return []
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(payload, list):
+        return []
+    rows: list[dict[str, str]] = []
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        host = str(row.get("host") or "").strip()
+        container = str(row.get("container") or "").strip()
+        if host and container:
+            rows.append({"host": host, "container": container})
+    return sorted(rows, key=lambda item: len(item["host"]), reverse=True)
+
+
+def normalize_mapping_key(value: str) -> str:
+    text = value.strip().replace("\\", "/").rstrip("/")
+    if WINDOWS_DRIVE_RE.match(value.strip()):
+        return text.lower()
+    return text
+
+
+def join_host_path(host_root: str, relative: str) -> str:
+    root = host_root.rstrip("\\/")
+    separator = "\\" if WINDOWS_DRIVE_RE.match(host_root) or "\\" in host_root else "/"
+    return root + separator + relative.replace("/", separator)
 
 
 def in_container_runtime() -> bool:

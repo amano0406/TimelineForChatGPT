@@ -19,6 +19,7 @@ services:
       TIMELINE_FOR_CHATGPT_CACHE_ROOT: /shared/cache
       TIMELINE_FOR_CHATGPT_UPLOADS_ROOT: /tmp/timeline-for-chatgpt/uploads
       TIMELINE_FOR_CHATGPT_OUTPUTS_ROOT: /shared/app-data/runs
+      TIMELINE_FOR_CHATGPT_PATH_MAPPINGS: ${TIMELINE_FOR_CHATGPT_PATH_MAPPINGS:-[]}
     ports:
       - "127.0.0.1:${TIMELINE_FOR_CHATGPT_API_PORT:-19300}:8080"
     volumes:
@@ -26,6 +27,9 @@ services:
       - "${TIMELINE_FOR_CHATGPT_HOST_OUTPUT_ROOT:-C:/TimelineData/chatgpt}:/workspace/output"
       - "${TIMELINE_FOR_CHATGPT_HOST_APPDATA_ROOT:-app-data}:/shared/app-data"
       - "${TIMELINE_FOR_CHATGPT_HOST_CACHE_ROOT:-cache-data}:/shared/cache"
+      - type: bind
+        source: ${TIMELINE_FOR_CHATGPT_HOST_ROOT:-.}
+        target: /host
       - type: bind
         source: ${TIMELINE_FOR_CHATGPT_C_DRIVE_MOUNT:-/mnt/c}
         target: /mnt/c
